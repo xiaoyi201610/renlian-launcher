@@ -1,0 +1,34 @@
+# ---- 运行期生成的个人数据，不要上传 ----
+launcher-config.json
+启动日志.log
+DLC自检.txt
+诊断自检.txt
+backups/
+versions/
+*.zip
+
+# ---- 打包产物 ----
+dist/
+build/
+release/
+__pycache__/
+*.pyc
+
+# ---- 缓存与玩家自己的记录 ----
+.edge-profile/
+achievement_icons/
+achievement_data_*.json
+achievement_global_*.json
+dlc_data_*.json
+dlc_detail_cache.json
+dlc_meta_cache.json
+dlc-names-cn.json
+mod-aliases.json
+mod-collections.json
+mod-source-overrides.json
+
+# ---- 开发过程截图 ----
+/dd-shot.png
+/exe-final.png
+/exe-shot.png
+/webview-shot.png

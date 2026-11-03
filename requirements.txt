@@ -1,0 +1,4 @@
+# 人联启动器运行依赖（源码版）
+pywebview>=5.0
+pillow>=10.0
+pythonnet>=3.0

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>人联启动器</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ 侧栏 ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img class="brand-img" id="brandImg" src="" alt="">
+      <div class="brand-text">
+        <strong data-i18n="brand.name">人联启动器</strong>
+        <small id="brandSub">CRUSADER KINGS III</small>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <a class="nav-item" href="#/home" data-route="home"><i class="ico">◈</i><span data-i18n="nav.home">概览</span></a>
+      <a class="nav-item" href="#/mods" data-route="mods"><i class="ico">☰</i><span data-i18n="nav.mods">模组管理</span></a>
+      <a class="nav-item" href="#/playsets" data-route="playsets"><i class="ico">❏</i><span data-i18n="nav.playsets">播放集</span></a>
+      <a class="nav-item" href="#/dlc" data-route="dlc"><i class="ico">◆</i><span data-i18n="nav.dlc">DLC 管理</span></a>
+      <a class="nav-item" href="#/saves" data-route="saves"><i class="ico">⛁</i><span data-i18n="nav.saves">存档管理</span></a>
+      <a class="nav-item" href="#/ach" data-route="ach"><i class="ico">★</i><span data-i18n="nav.ach">成就</span></a>
+      <a class="nav-item" href="#/workshop" data-route="workshop"><i class="ico">✧</i><span data-i18n="nav.workshop">创意工坊</span></a>
+      <a class="nav-item" href="#/gamedata" data-route="gamedata"><i class="ico">◫</i><span data-i18n="nav.gamedata">游戏文件</span></a>
+      <a class="nav-item" href="#/tools" data-route="tools"><i class="ico">⚒</i><span data-i18n="nav.tools">文件目录</span></a>
+      <a class="nav-item" href="#/memory" data-route="memory"><i class="ico">▤</i><span data-i18n="nav.memory">内存管理</span></a>
+      <a class="nav-item" href="#/diag" data-route="diag"><i class="ico">⚕</i><span data-i18n="nav.diag">崩溃诊断</span></a>
+      <a class="nav-item" href="#/sponsor" data-route="sponsor"><i class="ico">❤</i><span data-i18n="nav.sponsor">赞助人联</span></a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <a class="nav-item" href="#/settings" data-route="settings"><i class="ico">⚙</i><span data-i18n="nav.settings">启动器设置</span></a>
+      <div class="ver" id="footVer">v1.5</div>
+    </div>
+  </aside>
+
+  <!-- ============ 主区 ============ -->
+  <main class="main">
+    <header class="topbar">
+      <div class="game-id" id="gameSwitcher" data-i18n-title="top.switchGame" title="点击切换游戏">
+        <img class="game-logo-img" id="gameLogo" src="" alt="">
+        <div class="game-meta">
+          <div class="game-name" id="gameName">Crusader Kings III <span class="caret">▾</span></div>
+          <div class="game-ver" id="gameVer" data-i18n="top.loading">读取中…</div>
+        </div>
+        <div class="game-menu" id="gameMenu" hidden></div>
+      </div>
+
+      <div class="playset-quick">
+        <label data-i18n="top.currentPlayset">当前播放集</label>
+        <select id="quickPlayset"></select>
+        <span class="ps-badge" id="psBadge">—</span>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn ghost" id="btnHelp" data-i18n-title="top.helpTitle" title="打开使用教程（图文说明，含常见问题）"><span data-i18n="top.help">使用说明</span></button>
+        <button class="btn ghost" id="btnOfficial" data-i18n-title="top.officialTitle" title="打开 Paradox 官方启动器"><span data-i18n="top.official">官方启动器</span></button>
+        <button class="btn primary" id="btnLaunch">
+          <span class="play">▶</span> <span data-i18n="top.launch">开始游戏</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="save-state" id="saveState"></div>
+    <section class="view" id="view"></section>
+  </main>
+</div>
+
+<!-- 拖拽幽灵 -->
+<div id="ghost" class="drag-ghost" hidden></div>
+<!-- 提示条 -->
+<div id="toast" class="toast" hidden></div>
+
+<script src="/static/i18n.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

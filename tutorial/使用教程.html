@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>人联启动器 · 使用教程</title>
+<style>
+:root{
+  --bg:#0a0e13; --panel:#121a23; --panel2:#17212c; --line:#22303d;
+  --fg:#e8eef5; --fg2:#c3d0dc; --dim:#8494a4; --dim2:#64748b;
+  --gold:#c8a44a; --goldb:#e9cb80; --blue:#3d8bfd; --green:#3fb950;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:radial-gradient(1200px 600px at 80% -10%,rgba(200,164,74,.08),transparent 60%),var(--bg);
+  color:var(--fg);
+  font:15px/1.85 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;
+  padding:0 0 80px;
+}
+::-webkit-scrollbar{width:10px}
+::-webkit-scrollbar-thumb{background:#2a3a48;border-radius:6px}
+
+.wrap{max-width:920px;margin:0 auto;padding:0 26px}
+
+/* 头部 */
+header{
+  padding:64px 0 44px;text-align:center;position:relative;
+  border-bottom:1px solid var(--line);margin-bottom:46px;
+  background:linear-gradient(180deg,rgba(200,164,74,.06),transparent);
+}
+header .badge{
+  display:inline-block;font-size:11.5px;letter-spacing:2px;color:var(--gold);
+  border:1px solid rgba(200,164,74,.35);border-radius:30px;padding:4px 14px;margin-bottom:18px;
+}
+header h1{
+  font:700 34px/1.3 Georgia,"Songti SC",serif;letter-spacing:1px;margin-bottom:12px;
+  background:linear-gradient(180deg,#f4dc9e,#c8a44a);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+header p{color:var(--dim);font-size:14px}
+
+/* 章节 */
+section{margin-bottom:52px;scroll-margin-top:24px}
+h2{
+  font-size:21px;font-weight:700;margin-bottom:16px;padding-bottom:10px;
+  border-bottom:1px solid var(--line);display:flex;align-items:center;gap:11px;
+}
+h2 .n{
+  width:28px;height:28px;flex:none;border-radius:8px;display:grid;place-items:center;
+  background:rgba(200,164,74,.13);border:1px solid rgba(200,164,74,.35);
+  color:var(--goldb);font-size:13px;font-family:Georgia,serif;
+}
+h3{font-size:15.5px;color:var(--goldb);margin:24px 0 10px;font-weight:600}
+h4.sub{
+  font-size:14px;color:#d9c68f;margin:20px 0 8px;font-weight:600;
+  display:flex;align-items:center;gap:8px;
+}
+h4.sub::before{
+  content:"";width:3px;height:13px;border-radius:2px;flex:none;
+  background:rgba(200,164,74,.6);
+}
+p{margin-bottom:12px;color:var(--fg2)}
+ul,ol{margin:0 0 14px 22px;color:var(--fg2)}
+li{margin-bottom:7px}
+strong{color:#fff;font-weight:600}
+code{
+  background:#1b2632;border:1px solid var(--line);border-radius:5px;
+  padding:1px 6px;font-size:13px;color:var(--goldb);
+  font-family:Consolas,"Courier New",monospace;
+}
+a{color:var(--blue)}
+
+/* 图片 */
+figure{margin:20px 0 24px}
+figure img{
+  width:100%;border-radius:12px;border:1px solid var(--line);
+  box-shadow:0 14px 40px rgba(0,0,0,.5);display:block;
+}
+figcaption{text-align:center;color:var(--dim2);font-size:12.5px;margin-top:9px}
+
+/* 提示框 */
+.box{
+  border-radius:11px;padding:14px 17px;margin:16px 0;font-size:14px;
+  border:1px solid;border-left-width:3px;
+}
+.box p:last-child{margin-bottom:0}
+.tip{background:rgba(63,139,253,.07);border-color:rgba(63,139,253,.35)}
+.tip::before{content:"提示";display:block;font-size:11px;letter-spacing:1.5px;color:#79b8ff;margin-bottom:5px}
+.warn{background:rgba(210,153,34,.08);border-color:rgba(210,153,34,.4)}
+.warn::before{content:"注意";display:block;font-size:11px;letter-spacing:1.5px;color:#e3b341;margin-bottom:5px}
+.danger{background:rgba(229,83,75,.07);border-color:rgba(229,83,75,.35)}
+.danger::before{content:"重要";display:block;font-size:11px;letter-spacing:1.5px;color:#ff9a94;margin-bottom:5px}
+
+/* 步骤 */
+.steps{counter-reset:s;list-style:none;margin-left:0}
+.steps li{
+  counter-increment:s;position:relative;padding-left:38px;margin-bottom:13px;
+}
+.steps li::before{
+  content:counter(s);position:absolute;left:0;top:2px;width:24px;height:24px;border-radius:50%;
+  background:rgba(200,164,74,.15);border:1px solid rgba(200,164,74,.4);color:var(--goldb);
+  font-size:12px;display:grid;place-items:center;font-weight:700;
+}
+
+/* 快捷键 / 表格 */
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;color:var(--dim2);font-weight:500;font-size:12.5px;padding:9px 12px;border-bottom:1px solid var(--line)}
+td{padding:9px 12px;border-bottom:1px solid rgba(34,48,61,.6);color:var(--fg2)}
+kbd{
+  background:#1b2632;border:1px solid #2e4051;border-bottom-width:2px;border-radius:5px;
+  padding:1px 7px;font-size:12px;font-family:Consolas,monospace;color:#fff;
+}
+
+/* 目录 */
+.toc{
+  background:linear-gradient(180deg,rgba(23,33,44,.7),rgba(15,22,29,.7));
+  border:1px solid var(--line);border-radius:13px;padding:20px 24px;margin-bottom:46px;
+}
+.toc h4{font-size:13px;color:var(--dim2);letter-spacing:1.5px;margin-bottom:13px;font-weight:500}
+.toc ol{margin:0 0 0 20px;column-count:2;column-gap:34px}
+.toc li{margin-bottom:8px}
+.toc a{color:var(--fg2);text-decoration:none;font-size:14px}
+.toc a:hover{color:var(--goldb)}
+
+footer{
+  text-align:center;color:var(--dim2);font-size:12.5px;
+  border-top:1px solid var(--line);padding-top:26px;margin-top:60px;
+}
+@media(max-width:680px){
+  .wrap{padding:0 16px}
+  header h1{font-size:26px}
+  .toc ol{column-count:1}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="badge">人联启动器 · v1.4</div>
+  <h1>人联启动器<br>使用教程</h1>
+  <p>绿色免安装 · 双写排序 · 拖入安装 · 成就与 DLC 缓存 · 图文全解</p>
+</header>
+
+<div class="wrap">
+
+<div class="toc">
+  <h4>目录</h4>
+  <ol>
+    <li><a href="#start">第一次打开</a></li>
+    <li><a href="#ui">界面速览</a></li>
+    <li><a href="#order">模组排序（重点）</a></li>
+    <li><a href="#modops">模组操作与收藏夹</a></li>
+    <li><a href="#install">安装模组（拖入压缩包）</a></li>
+    <li><a href="#playset">播放集与导入导出</a></li>
+    <li><a href="#pack">把模组打包分享</a></li>
+    <li><a href="#dlc">DLC 管理</a></li>
+    <li><a href="#ach">成就</a></li>
+    <li><a href="#save">存档管理</a></li>
+    <li><a href="#workshop">创意工坊</a></li>
+    <li><a href="#tools">文件目录</a></li>
+    <li><a href="#gamedata">游戏文件</a></li>
+    <li><a href="#memory">内存管理</a></li>
+    <li><a href="#diag">崩溃诊断</a></li>
+    <li><a href="#settings">启动器设置</a></li>
+    <li><a href="#faq">常见问题</a></li>
+    <li><a href="#safe">数据安全</a></li>
+  </ol>
+</div>
+
+<!-- ========== 1 ========== -->
+<section id="start">
+  <h2><span class="n">1</span>第一次打开</h2>
+
+  <p>解压压缩包，你会看到这样的目录：</p>
+
+  <table>
+    <tr><th>文件</th><th>作用</th></tr>
+    <tr><td><code>人联启动器.exe</code></td><td>主程序，<strong>双击它就能用</strong></td></tr>
+    <tr><td><code>使用教程.html</code></td><td>就是你现在看的这个页面，启动器顶部「使用说明」按钮也会打开它</td></tr>
+    <tr><td><code>说明.txt</code></td><td>版本信息 + 被杀毒软件误报时怎么办</td></tr>
+    <tr><td><code>LICENSE.txt</code></td><td>开源许可</td></tr>
+    <tr><td><code>img/</code></td><td>教程配图，不用管</td></tr>
+  </table>
+
+  <div class="box tip">
+    <p>运行一段时间后，程序目录里会自己多出几个文件（<code>launcher-config.json</code> 配置、
+    <code>backups/</code> 备份、<code>achievement_data_*.json</code> 成就缓存、
+    <code>dlc_data_*.json</code> DLC 缓存、<code>achievement_icons/</code> 成就图标）。
+    <strong>这些都是缓存和你的配置，删掉不会损坏游戏</strong>，只是下次要重新读一遍。</p>
+  </div>
+
+  <p>双击 <strong>人联启动器.exe</strong>，等两三秒窗口就会弹出来。第一次启动稍慢是正常的（程序要解压自身）。</p>
+
+  <div class="box tip">
+    <p>程序<strong>不需要安装</strong>，也不会写注册表。整个文件夹可以拷到 U 盘、放桌面、改名，随便搬。删掉文件夹就等于卸载干净。</p>
+    <p>嫌每次找文件夹麻烦？到「启动器设置 → 启动器维护」点一下<strong>创建桌面快捷方式</strong>就行。</p>
+  </div>
+
+  <h3>它认识你的游戏吗？</h3>
+  <p>第一次启动会自动去找：</p>
+  <ul>
+    <li>Steam 装在哪个盘（读注册表和 Steam 库配置）</li>
+    <li>游戏本体目录（找 <code>binaries/ck3.exe</code>）</li>
+    <li>存档和配置目录（<code>文档/Paradox Interactive/Crusader Kings III</code>）</li>
+    <li>创意工坊目录（<code>steamapps/workshop/content/1158310</code>）</li>
+  </ul>
+  <p>如果概览页顶部显示「<strong>未找到 ck3.exe</strong>」，说明自动探测没成功，去左下角「启动器设置」里手动选一下游戏目录就好。</p>
+</section>
+
+<!-- ========== 2 ========== -->
+<section id="ui">
+  <h2><span class="n">2</span>界面速览</h2>
+
+  <figure>
+    <img src="img/01-概览.png" alt="概览页">
+    <figcaption>概览页：一眼看到模组总数、启用数、播放集、存档（配图是较早版本，功能以当前界面为准）</figcaption>
+  </figure>
+
+  <p>左边是导航栏，从上到下：</p>
+  <ul>
+    <li><strong>概览</strong> —— 总览 + 一致性检查 + 快捷入口</li>
+    <li><strong>模组管理</strong> —— 排序主战场</li>
+    <li><strong>播放集</strong> —— 多套配置切换、导入导出</li>
+    <li><strong>DLC 管理</strong> —— 开关资料片</li>
+    <li><strong>存档管理</strong> —— 清理旧存档</li>
+    <li><strong>成就</strong> —— 看解锁进度、完成时间、全球完成率</li>
+    <li><strong>创意工坊</strong> —— 订阅管理与搜索</li>
+    <li><strong>游戏文件</strong> —— 校验完整性、查看游戏版本</li>
+    <li><strong>文件目录</strong> —— 一键打开各种游戏目录</li>
+    <li><strong>内存管理</strong> —— 内存占用查看与优化</li>
+    <li><strong>崩溃诊断</strong> —— 出问题先来这里</li>
+    <li><strong>赞助人联</strong> —— 想支持一下作者的话</li>
+  </ul>
+
+  <p>右上角有三个按钮：</p>
+  <ul>
+    <li><strong>使用说明</strong> —— 就是打开你现在看的这个教程页</li>
+    <li><strong>官方启动器</strong> —— 叫出 Paradox 那个原版启动器</li>
+    <li><strong>开始游戏</strong> —— 金色的那个，<strong>跳过官方启动器</strong>直接把游戏拉起来，速度快不少</li>
+  </ul>
+
+  <div class="box tip">
+    <p>顶部左侧还有个<strong>游戏切换下拉框</strong>。切到另一个游戏后，模组、播放集、DLC、成就都会自动换成那个游戏的数据，不用手动刷新。
+    如果你在外面手动装了模组，也可以在概览页点<strong>「⟳ 刷新」</strong>强制重读一遍。</p>
+  </div>
+
+  <div class="box warn">
+    <p>黄色警告框的意思是：<strong>「游戏实际加载的模组」和「你播放集里勾选的」对不上</strong>。常见于手动改过文件、或用官方启动器改过播放集。点一下里面的<strong>按当前播放集修复</strong>就对齐了。</p>
+  </div>
+</section>
+
+<!-- ========== 3 ========== -->
+<section id="order">
+  <h2><span class="n">3</span>模组排序（重点）</h2>
+
+  <figure>
+    <img src="img/02-模组排序.png" alt="模组管理">
+    <figcaption>左边「已识别模组」，右边「当前播放集」——排序就在右边拖</figcaption>
+  </figure>
+
+  <h3>怎么拖</h3>
+  <ol class="steps">
+    <li>点「模组管理」，等右边列表加载出来。</li>
+    <li>按住右栏任意一行的<strong>空白处</strong>（不要按开关和 × 按钮），往上或往下拖。</li>
+    <li>拖动时会出现一条<strong>金色横线</strong>，那就是松手后它会插进去的位置。</li>
+    <li>松手，自动保存，右下角提示「已保存 · 已同步到游戏」。</li>
+  </ol>
+
+  <p>也可以<strong>从左栏直接拖进右栏</strong>，拖到哪一行上方就插到那个位置，不用一个一个点 ＋ 号。</p>
+
+  <div class="box danger">
+    <p><strong>排序的核心规则：越靠下，优先级越高。</strong><br>
+    游戏是从上往下加载的，后加载的模组会覆盖先加载的<strong>同名文件</strong>。</p>
+    <ul style="margin-bottom:0">
+      <li><strong>大型框架 / 大改类</strong>（如 Unofficial Patch、地图、宗教大修）→ 放<strong>上面</strong></li>
+      <li><strong>兼容补丁、汉化、小修小补</strong> → 放<strong>下面</strong></li>
+      <li><strong>两个功能冲突的模组</strong> → 想要谁生效就把谁放下边</li>
+    </ul>
+  </div>
+
+  <h3>工具栏还能干什么</h3>
+  <table>
+    <tr><th>按钮</th><th>作用</th></tr>
+    <tr><td><strong>排序 ▾</strong></td><td>点开有三个选项：按 A→Z、按 Z→A、按名称排序（中文优先）</td></tr>
+    <tr><td>反转顺序</td><td>整体上下颠倒，排查冲突时有用</td></tr>
+    <tr><td>全部启用 / 全部禁用</td><td>批量开关（不会改变顺序）</td></tr>
+    <tr><td>导出播放集</td><td>把当前这套配置存成 JSON 文件</td></tr>
+    <tr><td>导入 Mod</td><td>选压缩包安装本地模组（也可以直接拖进窗口）</td></tr>
+    <tr><td>搜索框</td><td>左右两栏各自独立搜索，互不干扰</td></tr>
+    <tr><td>筛选标签</td><td>只看<strong>已启用</strong>、只看<strong>本地</strong>模组、只看<strong>版本不符</strong>的，排查崩溃很好用</td></tr>
+  </table>
+
+  <div class="box warn">
+    <p><strong>「排序 ▾」点任何一项都会先问你一句</strong>：因为重排会覆盖你辛苦拖出来的顺序，而且<strong>没法一键还原</strong>（只能自己再拖回去）。
+    点「取消」就什么都不做。播放集里模组少于 2 个时不会弹窗，直接提示没有可排序的。</p>
+    <p>三种排序的区别：<strong>A→Z</strong> 严格按英文字母，中文排在英文后面；<strong>Z→A</strong> 反过来；
+    <strong>按名称排序（中文优先）</strong> 中英文混排，中文按字的读音排（就是旧版那个「按名称排序」的行为）。</p>
+  </div>
+
+  <h3>那些彩色小标签</h3>
+  <p>每个模组名字下面会有一两个标签：</p>
+  <p>
+    <strong style="color:#79d18b">兼容</strong>：支持版本和你的游戏版本对得上。<br>
+    <strong style="color:#e3b341">版本</strong>：支持版本较旧，能用但可能出小问题。<br>
+    <strong style="color:#ff8b85">缺失</strong>：描述文件指向的文件夹不见了（模组被删了）。<br>
+    <strong style="color:#b3a0ff">工坊</strong> / <strong style="color:#79b8ff">本地</strong>：来源。
+  </p>
+
+  <h3>排序为什么一定会生效</h3>
+  <p>CK3 的模组顺序其实存在<strong>两个地方</strong>：</p>
+  <ul>
+    <li><code>launcher-v2.sqlite</code> —— 官方启动器界面上显示的顺序</li>
+    <li><code>dlc_load.json</code> —— <strong>游戏启动时真正读取的</strong>加载顺序</li>
+  </ul>
+  <p>很多工具只改其中一个，结果就是「界面顺序变了，游戏里没变」。<strong>本启动器每次保存会同时写这两处</strong>，所以：</p>
+  <ul>
+    <li>用本启动器排完序，回头再打开官方启动器 → 顺序是对的</li>
+    <li>直接点「开始游戏」跳过官方启动器 → 进游戏也是对的</li>
+  </ul>
+
+  <h3>冲突排查</h3>
+  <p>顺序排不对，很多时候是<strong>两个 mod 改了同一个文件、互相打架</strong>。模组管理页工具栏上的<strong>「冲突排查」</strong>按钮就是干这个的：它扫描当前播放集里<strong>已启用</strong>的模组，一次性查出四类问题。</p>
+  <table>
+    <tr><th>检测项</th><th>是什么意思</th></tr>
+    <tr><td>文件冲突</td><td>两个 mod 改了同一个游戏文件，<strong>排后面的赢</strong>（把前面的覆盖掉）。按影响大小分「高 / 中 / 低」，<strong>高</strong>的最值得看。</td></tr>
+    <tr><td>本地化键冲突</td><td>同一个翻译词条被多个 mod 定义，排后面的生效——汉化被「悄悄顶掉」多半是它。</td></tr>
+    <tr><td>依赖缺失</td><td>某个 mod 声明「需要前置 mod」，但播放集里没装。尽力匹配，可能有误报。</td></tr>
+    <tr><td>replace_path 提示</td><td>这个 mod 会<strong>整目录替换</strong>原版文件，影响面大，装了它别的同类 mod 可能失效。</td></tr>
+  </table>
+  <ol class="steps">
+    <li>点工具栏「冲突排查」，等进度条走完（模组多会扫一会儿）。</li>
+    <li>文件冲突按「获胜 ▸ 被覆盖」<strong>配对合并</strong>成大框，点「展开」看具体是哪些文件在打架。</li>
+    <li>想让被覆盖的 mod 优先？点那组底部的<strong>「让 XX 优先」</strong>，加载顺序自动调好。</li>
+    <li>调完顺序要<strong>重新进游戏</strong>才生效。</li>
+  </ol>
+  <div class="box tip">
+    <p>文件重叠不一定是坏事——很多 mod 本来就靠覆盖打补丁，<strong>高严重度</strong>的冲突才值得重点看。检测结果仅供参考，最终以游戏内实际表现为准。</p>
+  </div>
+</section>
+
+<!-- ========== 4 ========== -->
+<section id="modops">
+  <h2><span class="n">4</span>模组操作与收藏夹</h2>
+
+  <p>左右两栏每个模组条目的右侧都有一个 <strong>⋯</strong> 按钮，点开是这个模组的全部操作。
+  左栏（已识别）和右栏（当前播放集）的条目都有。</p>
+
+  <h3>菜单里都有什么</h3>
+  <table>
+    <tr><th>菜单项</th><th>做什么</th></tr>
+    <tr><td>顶部标题</td><td>显示模组名和<strong>创意工坊 ID</strong></td></tr>
+    <tr><td>修改显示名称</td><td>只改<strong>启动器里显示的名字</strong></td></tr>
+    <tr><td>恢复原始名称</td><td>改过名才会出现，一键还原</td></tr>
+    <tr><td>复制 MOD ID</td><td>把创意工坊 ID 复制到剪贴板</td></tr>
+    <tr><td>打开 MOD 目录</td><td>资源管理器直达这个模组的文件夹</td></tr>
+    <tr><td>打包此 MOD（导出 zip）</td><td>把这个模组打成可分享的压缩包，见第 7 章</td></tr>
+    <tr><td>收藏到收藏夹 ▶</td><td>收进你自建的收藏夹，可多选</td></tr>
+    <tr><td>标记为本地 / 标记为工坊</td><td>自动判定错了时手动纠正来源标签</td></tr>
+    <tr><td>打开创意工坊页面</td><td>浏览器打开这个模组的 Steam 创意工坊页</td></tr>
+    <tr><td><span style="color:#ff8b85">删除此 MOD</span></td><td>红色项，删描述文件 + 内容，<strong>走回收站</strong></td></tr>
+  </table>
+
+  <h3>「修改显示名称」改的是哪里</h3>
+  <p>只改<strong>启动器界面上的显示名</strong>，存在启动器自己的 <code>mod-aliases.json</code> 里。</p>
+  <ul>
+    <li>不会改 <code>.mod</code> 描述文件</li>
+    <li>不会影响游戏里显示的名字</li>
+    <li>随时可以「恢复原始名称」</li>
+  </ul>
+  <p>用来把一长串英文名改成自己看得懂的名字很方便，比如把 <code>Unrestricted Duel</code> 显示成「无限制决斗」。</p>
+
+  <h3>来源标签判错了怎么办</h3>
+  <p>「工坊 / 本地」是按 <code>.mod</code> 里 <code>path</code> 指向的<strong>真实目录</strong>判定的：
+  指向 <code>steamapps/workshop/content/</code> 就是工坊，指向你自己 <code>mod</code> 目录就是本地。</p>
+  <p>如果确实判错了（比如某个 mod 你确信是本地版却显示工坊），用菜单里的
+  <strong>「标记为本地 / 标记为工坊」</strong>手动纠正，之后会一直记住。改过之后菜单里会多出
+  <strong>「恢复自动判定来源」</strong>，点一下退回自动判断。</p>
+
+  <h3>收藏夹</h3>
+  <p>模组多起来以后，靠搜索找太慢。收藏夹可以自己归类，而且<strong>数量不限</strong>。</p>
+
+  <h4 class="sub">新建</h4>
+  <p>工具栏下面有一行 <strong>收藏夹</strong> 标签，最右边是 <strong>＋</strong>。点它输入名字就行，
+  名字随便起（<code>1</code>、<code>2</code>、<code>3</code>、<code>必装</code>、<code>汉化</code> 都行）。</p>
+
+  <h4 class="sub">收藏</h4>
+  <p>任意模组的 <strong>⋯</strong> → <strong>收藏到收藏夹 ▶</strong>，弹出子菜单列出所有收藏夹，
+  已收藏的带 ✓，点一下收藏/取消。<strong>同一个模组可以同时进多个收藏夹</strong>。</p>
+
+  <h4 class="sub">筛选</h4>
+  <p>点收藏夹标签（比如「1 (5)」），左栏立刻只显示这个夹里的 5 个模组。点「全部」回到完整列表。
+  标签上的数字就是夹里的模组数。</p>
+
+  <h4 class="sub">改名 / 删除</h4>
+  <p>在收藏夹标签上<strong>右键</strong>：</p>
+  <ul>
+    <li>输入新名字 → 重命名</li>
+    <li>输入 <code>del</code> → 删除这个收藏夹（<strong>只删夹子，不会删模组</strong>）</li>
+    <li>留空 → 取消</li>
+  </ul>
+
+  <h3>删除模组的注意事项</h3>
+  <div class="box warn">
+    <p>「删除此 MOD」会删掉 <code>.mod</code> 描述文件和它对应的内容文件夹，<strong>都进 Windows 回收站</strong>，删错了可以还原。</p>
+    <p>如果删的是<strong>工坊模组</strong>，只要 Steam 里还订阅着，下次启动游戏会被重新下载回来 ——
+    要彻底删掉得先去创意工坊取消订阅。</p>
+  </div>
+</section>
+
+<!-- ========== 5 ========== -->
+<section id="install">
+  <h2><span class="n">5</span>安装模组（拖入压缩包）</h2>
+
+  <p>从别处拿到的模组压缩包，<strong>直接拖进启动器窗口</strong>就能装，不用手动解压、不用自己写描述文件。</p>
+
+  <ol class="steps">
+    <li>把 <code>.zip</code> / <code>.7z</code> / <code>.rar</code> 从资源管理器拖到启动器窗口<strong>任意位置</strong>。</li>
+    <li>整个窗口会出现一圈<strong>金色虚线框</strong>，写着「松开即可安装 Mod」。</li>
+    <li>松手，弹出安装进度面板，逐个显示每个包的结果。</li>
+    <li>装好的模组会出现在左栏「已识别模组」里，标签是 <strong style="color:#79b8ff">本地</strong>。</li>
+  </ol>
+
+  <p>可以<strong>一次拖多个</strong>，会挨个安装，每个都显示成功或失败原因。</p>
+
+  <p>拖拽不灵的话，工具栏的 <strong>「导入 Mod」</strong> 按钮走的是同一个安装逻辑，只是用文件选择框挑包。</p>
+
+  <h3>装到哪里去了</h3>
+  <p>解压到 <code>文档\Paradox Interactive\&lt;游戏&gt;\mod\&lt;包里的文件夹名&gt;\</code>，
+  并自动生成对应的 <code>.mod</code> 描述文件。描述文件里会保留 <code>name</code>、
+  <code>version</code>、<code>supported_version</code>、<code>picture</code>、<code>tags</code>、<code>dependencies</code>。</p>
+
+  <h3>这几种情况会怎样</h3>
+  <table>
+    <tr><th>情况</th><th>处理</th></tr>
+    <tr><td>包里有同名模组</td><td>自动加后缀 <code>_2</code>、<code>_3</code>，<strong>绝不覆盖</strong>已有模组</td></tr>
+    <tr><td>文件夹名是中文</td><td>转成 ASCII 安全名（CK3 读不了中文路径）</td></tr>
+    <tr><td>包里没有 <code>descriptor.mod</code></td><td>明确报错，并列出包里顶层有什么，不会瞎装</td></tr>
+    <tr><td>压缩包设了密码</td><td>提示「这个压缩包设了密码，解不开」</td></tr>
+    <tr><td>压缩包损坏</td><td>一秒内报错，不会卡住</td></tr>
+    <tr><td>包超过 400MB</td><td>先拦下，提示手动解压</td></tr>
+  </table>
+
+  <div class="box tip">
+    <p><strong>不需要装 7-Zip 或 WinRAR。</strong>解 7z / rar 用的是 Windows 系统自带的
+    <code>tar.exe</code>（它其实是 bsdtar，原生支持这些格式）。</p>
+  </div>
+
+  <div class="box warn">
+    <p>装好的模组只是进了「已识别」列表，<strong>不会自动加入当前播放集</strong> ——
+    需要你自己点 ＋ 或拖到右栏，这样不会打乱你现有播放集的顺序。</p>
+  </div>
+</section>
+
+<!-- ========== 6 ========== -->
+<section id="playset">
+  <h2><span class="n">6</span>播放集与导入导出</h2>
+
+  <figure>
+    <img src="img/04-播放集.png" alt="播放集">
+    <figcaption>一套播放集 = 一套「启用哪些模组 + 什么顺序」</figcaption>
+  </figure>
+
+  <p>播放集就是配置方案。比如「纯净原版」「人联懒人包」「大梦春秋」各存一套，切换时不用重新勾选。</p>
+
+  <h3>操作按钮</h3>
+  <table>
+    <tr><th>按钮</th><th>说明</th></tr>
+    <tr><td>启用</td><td>把这一套设为当前使用，并同步到游戏</td></tr>
+    <tr><td>克隆</td><td>复制一份再改，原方案不受影响</td></tr>
+    <tr><td>重命名</td><td>改名</td></tr>
+    <tr><td>导出</td><td>存成 <code>.json</code> 文件</td></tr>
+    <tr><td>删除</td><td>删掉（会先自动备份数据库）</td></tr>
+  </table>
+
+  <h3>导出发给朋友</h3>
+  <ol class="steps">
+    <li>点「导出当前」，<strong>会弹出 Windows 的保存对话框</strong>，自己选存到哪（默认在桌面）。</li>
+    <li>得到一个 <code>xxx.json</code> 文件，发给朋友。</li>
+    <li>朋友点「导入播放集」，同样是弹出文件选择框，选中就能导入。</li>
+    <li>程序会自动匹配他电脑上的模组，顺序原样保留。</li>
+    <li>他没订阅的模组会提示「N 个缺失」，去工坊订阅后再导一次就补上了。</li>
+  </ol>
+
+  <div class="box tip">
+    <p>模组管理页工具栏上也有一个<strong>「导出播放集」</strong>按钮，作用和这里一样，省得来回切页面。</p>
+  </div>
+
+  <div class="box tip">
+    <p>导入<strong>不会覆盖</strong>你现有的播放集，而是<strong>新建一个</strong>，所以可以放心导入别人的配置来试。</p>
+  </div>
+</section>
+
+<!-- ========== 7 ========== -->
+<section id="pack">
+  <h2><span class="n">7</span>把模组打包分享</h2>
+
+  <p>看到好用的模组，想打包下来存本地或发给朋友？用菜单里的 <strong>「打包此 MOD（导出 zip）」</strong>。</p>
+
+  <ol class="steps">
+    <li>在模组条目的 <strong>⋯</strong> 菜单里点<strong>「打包此 MOD（导出 zip）」</strong>。</li>
+    <li>弹出<strong>导出进度面板</strong>，显示这个模组名和一条进度条。</li>
+    <li>紧接着弹出系统保存框，<strong>自己选存到哪</strong>、叫什么名字。</li>
+    <li>选完开始压缩，进度条上会实时显示 <code>76 / 180 个文件</code> 和百分比。</li>
+    <li>完成后进度条变绿，显示文件数和压缩包大小，并<strong>自动在资源管理器里定位到那个 zip</strong>。</li>
+  </ol>
+
+  <h3>打出来的包长什么样</h3>
+  <p>结构是特意设计成<strong>「别人拖回启动器就能直接装」</strong>的：</p>
+  <ul>
+    <li><code>你的模组名/</code> —— 完整的模组内容（<code>common/</code>、<code>events/</code>、<code>localization/</code> …）</li>
+    <li><code>你的模组名.mod</code> —— 顶层描述文件，<code>path</code> 写成<strong>相对路径</strong>，不绑死你的电脑</li>
+  </ul>
+  <p>所以对方既可以<strong>直接拖进启动器</strong>装，也可以解压后手动丢进 <code>mod</code> 目录 —— 两种方式都能用。</p>
+
+  <h3>打包时会自动跳过</h3>
+  <p><code>.git</code>、<code>__pycache__</code>、<code>.idea</code>、<code>Thumbs.db</code>、<code>.DS_Store</code> 这些没用的东西不会被打进去。
+  目录名也会转成 ASCII 安全格式，避免别人装完 CK3 读不到。</p>
+
+  <div class="box tip">
+    <p>大模组（几百 MB）压缩要几十秒，进度条会一直动，<strong>耐心等一下就好</strong>。中途可以关掉面板，后端会继续把包写完。</p>
+  </div>
+
+  <div class="box warn">
+    <p>打出来的包<strong>不包含</strong>工坊订阅关系。<strong>如果你打的是别人的工坊模组</strong>，
+    请遵守原作者的使用许可 —— 自己留着玩没问题，公开发布前最好先征得同意。</p>
+  </div>
+</section>
+
+<!-- ========== 5 ========== -->
+<section id="dlc">
+  <h2><span class="n">8</span>DLC 管理</h2>
+
+  <figure>
+    <img src="img/03-DLC管理.png" alt="DLC 管理">
+    <figcaption>封面 + 中文名 + 英文原名，点开关即可</figcaption>
+  </figure>
+
+  <p>读的是游戏目录下的 <code>game/dlc</code>，所以<strong>你有什么 DLC 就显示什么</strong>，不会凭空多出来。</p>
+
+  <p>右上角会显示<strong>「已拥有 X 个 · 已启用 Y 个 · 未拥有 Z 个」</strong>。状态分三种：</p>
+  <table>
+    <tr><th>状态</th><th>样子</th><th>能不能点</th></tr>
+    <tr><td>已拥有 + 已启用</td><td>卡片亮、开关金色</td><td>能，点一下停用</td></tr>
+    <tr><td>已拥有 + 已停用</td><td>卡片变暗、开关灰色</td><td>能，点一下重新启用</td></tr>
+    <tr><td><strong>未拥有</strong></td><td>整张卡灰掉、左上角 🔒「未拥有」</td><td><strong>不能</strong>，会提示 Steam 里没有授权</td></tr>
+  </table>
+
+  <h3>顶部补丁状态卡</h3>
+  <p>页面最上方有一张状态卡，自动识别第三方 DLC 解锁补丁（CreamAPI 等），三种样子：</p>
+  <ul>
+    <li><strong>检测到补丁</strong>（橙）—— 显示补丁类型和解锁数量，此时<strong>不锁定任何 DLC</strong>，全部可用</li>
+    <li><strong>补丁可能失效</strong>（红）—— Steam 更新游戏可能把 <code>steam_api64.dll</code> 换回原版，提示重新覆盖</li>
+    <li><strong>未检测到补丁</strong>（绿）—— 正常，按 Steam 授权判定</li>
+  </ul>
+  <p>补丁卡上有「打开补丁目录」按钮，直达 <code>binaries/</code> 目录。</p>
+
+  <h3>二维筛选</h3>
+  <p>卡片上方两行筛选，可以叠加：</p>
+  <ul>
+    <li><strong>状态</strong>：全部 / 已启用 / 未启用 / 未拥有</li>
+    <li><strong>分类</strong>：全部 / 大型扩展包 / 核心扩展包 / 风味包 / 事件包 / 内容创作者包 / 装饰包 / 音乐包</li>
+  </ul>
+  <p>分类按 DLC 目录名的官方后缀判定（<code>ep</code> 大型扩展、<code>ce</code> 核心扩展、<code>fp</code> 风味包、
+  <code>bp</code> 事件包、<code>cp</code> 内容创作者包、<code>sp</code> 装饰包、<code>mp</code> 音乐包），
+  和 Paradox 官方定义一致。</p>
+  <p>比如同时点「已启用」+「风味包」，就只看风味包里已启用的。右边还有搜索框，按名字或目录名过滤。</p>
+
+  <h3>卡片上的标签</h3>
+  <ul>
+    <li>左上角<strong>类型标签</strong>：大型扩展包 / 核心扩展包 / 风味包 / 事件包 / 内容创作者包 / 装饰包 / 音乐包，各配一个颜色</li>
+    <li>右下角<strong>来源角标</strong>：<span style="color:#c8a44a">原生拥有</span> = Steam 里买的 ·
+      <span style="color:#b0a8f0">补丁解锁</span> = 补丁给的 ·
+      <span style="color:#ff9d96">未拥有</span> = 没授权</li>
+  </ul>
+
+  <h3>「有没有这个 DLC」是怎么判断的</h3>
+
+  <p>先看有没有装解锁补丁，装了就直接按「全部可用」处理。没装就问你的 Steam 客户端，
+  用的是和 <strong>Steam 库里那张 DLC 卡片</strong>完全一样的授权数据。</p>
+
+  <p>所以结果一定是一致的：<strong>Steam 说你没有，游戏里就是锁的，这里也锁。</strong>
+  不会出现「这里显示能开、进游戏却是灰的」这种情况。</p>
+
+  <div class="box tip">
+    <p><strong>如果 Steam 没开</strong>，本启动器问不到结果，就<strong>不锁定任何 DLC</strong>，
+    页面顶部会显示一条黄色提示。把 Steam 打开（保持登录），再点右上角
+    <strong>「重新校验」</strong>即可。</p>
+    <p>这样设计是为了不误伤 —— 宁可暂时不锁，也不要把你花钱买的 DLC 判成没有。</p>
+  </div>
+
+  <h3>DLC 名字为什么是中文</h3>
+
+  <p>Paradox 在 Steam 商店里没给 DLC 设中文名（切成简体中文看到的还是英文），
+  游戏自己的中文语言包里也<strong>没有 DLC 名称的翻译</strong>。
+  所以本启动器<strong>内置了一份中文名对照表</strong>。</p>
+
+  <p>覆盖全部支持的游戏（十字军之王、钢铁雄心、欧陆风云、维多利亚、群星、城市天际线等），
+  目前一共 <strong>260 多个 DLC</strong>。卡片上这样显示：</p>
+
+  <div style="margin:16px 0 4px;padding:16px;border:1px solid var(--line);border-radius:11px;
+              background:rgba(23,33,44,.55);text-align:center">
+    <div style="color:var(--goldb);font-weight:600;font-size:15.5px">普天之下</div>
+    <div style="font-size:12px;color:var(--dim2);margin-top:4px;letter-spacing:.2px">
+      Crusader Kings III: All Under Heaven
+    </div>
+  </div>
+  <p style="text-align:center;font-size:12px;color:var(--dim2);margin:0 0 18px">
+    大字是中文名，下面小字是英文原名
+  </p>
+
+  <ul>
+    <li>这份对照表<strong>打包在程序里、完全离线</strong>，不需要额外装任何汉化补丁</li>
+    <li>搜索时<strong>中英文都能搜</strong>，输「普天」或「heaven」都能找到</li>
+    <li>英文原名叫什么也看得见，方便你去 Steam 对照</li>
+  </ul>
+
+  <div class="box tip">
+    <p><strong>以后 Paradox 出了新 DLC，名字还是英文怎么办？</strong></p>
+    <p>不影响使用。新 DLC 会照常出现在列表里，开关、校验、购买提示全都正常，
+    只是标题暂时显示英文原名。等启动器更新加上翻译，就会自动变成中文。</p>
+    <p>等不及的话，也可以<strong>自己加一行</strong> —— 见下面一节。</p>
+  </div>
+
+  <h3>自己添加或修改中文名</h3>
+
+  <p>两种情况：<strong>新出的 DLC 还没有中文名</strong>，或者<strong>你觉得某个译名不顺眼想换掉</strong>。
+  这两种都能自己改，<strong>不用碰程序文件</strong>。</p>
+
+  <ol class="steps">
+    <li>进「DLC 管理」页，点右上角的 <strong>「自定义中文名」</strong>按钮。</li>
+    <li>会弹出记事本，打开程序目录下的 <code>dlc-names-cn.json</code>
+      （第一次点会自动生成，里面已经带了说明和示例）。</li>
+    <li>照格式加一行：<code>"英文原名": "中文名",</code></li>
+    <li>保存（<kbd>Ctrl</kbd> + <kbd>S</kbd>），回到启动器点 <strong>「重新校验」</strong>，名字就变了。</li>
+  </ol>
+
+  <p>改完大概是这个样子（下面三行是示例，你自己的文件里已经有了）：</p>
+
+  <div style="margin:14px 0 18px;padding:14px 18px;border:1px solid var(--line);
+              border-radius:10px;background:#0e151d;
+              font-family:Consolas,'Courier New',monospace;font-size:13px;
+              line-height:2;color:var(--fg2);overflow-x:auto">{<br>
+&nbsp;&nbsp;<span style="color:#7fb3d5">"the great wave"</span>: <span style="color:#e9cb80">"大浪潮"</span>,<br>
+&nbsp;&nbsp;<span style="color:#7fb3d5">"Gotterdammerung"</span>: <span style="color:#e9cb80">"诸神黄昏"</span>,<br>
+&nbsp;&nbsp;<span style="color:#7fb3d5">"Peace For Our Time"</span>: <span style="color:#e9cb80">"我们时代的和平"</span><br>
+}</div>
+
+  <div class="box tip">
+    <p><strong>英文名怎么写都行</strong>，大小写不限，前面那些 <code>Expansion -</code>、
+    <code>Victoria 3:</code>、<code>- Immersion Pack</code> 之类的词可以省略，程序会自动匹配。</p>
+    <p>最稳的办法：<strong>直接复制 DLC 卡片上那行英文小字</strong>，粘到引号里。</p>
+  </div>
+
+  <div class="box warn">
+    <p>这个文件是 <strong>JSON 格式</strong>，两条规矩必须守：</p>
+    <ul style="margin-bottom:0">
+      <li>每一项结尾要有<strong>英文逗号</strong> <code>,</code>（<strong>最后一行不要加</strong>）</li>
+      <li>引号必须是<strong>英文双引号</strong> <code>"</code>，中文引号 <code>“”</code> 不认</li>
+    </ul>
+  </div>
+
+  <div class="box danger">
+    <p>文件改坏了（比如漏了逗号），整个对照表会失效，DLC 名字<strong>全部退回英文</strong>。
+    遇到这种情况不用慌，把文件删掉重启启动器，就会重新生成一份干净的模板，
+    内置的 260 多个中文名照样在。</p>
+  </div>
+
+  <div class="box tip">
+    <p>这里写的名字<strong>优先级最高</strong>，会覆盖内置的翻译。
+    同一个 DLC 你改成什么，卡片上就显示什么。</p>
+  </div>
+
+  <h3>数据会缓存在本地</h3>
+  <p>DLC 的<strong>清单、封面、介绍、「是否已购买」的判定结果</strong>，问一次 Steam 就会存到本地
+  <code>dlc_data_&lt;游戏&gt;.json</code>，之后打开页面<strong>直接读本地、不再问 Steam</strong>，速度差别很大：</p>
+  <table>
+    <tr><th>场景</th><th>耗时</th></tr>
+    <tr><td>第一次进入（扫文件 + 问 Steam）</td><td>约 0.05 秒起，网络差时更久</td></tr>
+    <tr><td>之后再进（纯读本地缓存）</td><td><strong>约 0.006 秒</strong></td></tr>
+    <tr><td>点「重新校验」</td><td>约 0.3 秒（重扫文件 + 重新问 Steam）</td></tr>
+  </table>
+  <p>统计条末尾会写明数据来源：<code>本地缓存 · 2026-11-03 10:58</code>。</p>
+
+  <div class="box warn">
+    <p><strong>在 Steam 里刚买了新 DLC？</strong>缓存里还是旧的「未拥有」，点右上角<strong>「重新校验」</strong>刷新一下就好。</p>
+    <p>「已启用」这个勾选状态<strong>不进缓存</strong>，因为它跟着<strong>当前播放集</strong>走，每次都是实时算的，
+    所以切换播放集时勾选不会乱。</p>
+  </div>
+
+  <p>点「详情」看到的那个带截图和长介绍的弹窗，内容也会缓存 <strong>7 天</strong>。
+  网络不好时如果有旧缓存，会直接用旧的显示，不会给你一片空白。</p>
+</section>
+
+<!-- ========== 8 ========== -->
+<section id="ach">
+  <h2><span class="n">9</span>成就</h2>
+
+  <p>左侧边栏的 <strong>★ 成就</strong>，能看到你在这个游戏里解锁了多少、什么时候解锁的、全球有多少人拿到。</p>
+
+  <h3>数据是从哪来的</h3>
+  <p>不是截图识别的，也不是猜的 —— 读的是你本机 Steam 的真实记录：</p>
+  <ul>
+    <li><strong>成就清单</strong>：<code>Steam/appcache/stats/UserGameStatsSchema_&lt;AppID&gt;.bin</code>
+      （中英文名、描述、图标、所属 DLC）</li>
+    <li><strong>解锁状态和完成时间</strong>：<code>UserGameStats_*.bin</code> 里的 <code>AchievementTimes</code></li>
+    <li><strong>成就图标</strong>：游戏本体的 <code>game/gfx/interface/icons/achievements/</code> 里的 DDS 贴图</li>
+  </ul>
+  <p>所以显示的数字和你 Steam 客户端、游戏里看到的<strong>完全一致</strong>。</p>
+
+  <h3>页面上有什么</h3>
+  <ul>
+    <li>顶部<strong>进度条</strong>：已解锁 / 总数，比如 <code>110 / 198 · 56%</code></li>
+    <li>三个数字：<strong>已解锁</strong>、<strong>未解锁</strong>、<strong>稀有已解锁</strong></li>
+    <li>筛选：全部 / 已解锁 / 未解锁 / <strong>稀有</strong>（全球完成率低于 5%）</li>
+    <li><strong>DLC 分组下拉</strong>：只看某个资料片的成就</li>
+    <li>每一行：图标 + 名称 + 「稀有」「DLC」标签 + 描述 + 右侧「全球 X%」和「解锁日期」</li>
+  </ul>
+
+  <h3>缓存机制</h3>
+  <p>和 DLC 一样，<strong>读一次就存本地</strong>（<code>achievement_data_&lt;AppID&gt;.json</code>），
+  下次打开<strong>秒开、完全不碰 Steam</strong>。</p>
+  <table>
+    <tr><th>场景</th><th>耗时</th></tr>
+    <tr><td>第一次（读 Steam 缓存 + 拉全球完成率）</td><td>几秒</td></tr>
+    <tr><td>之后打开</td><td><strong>0.1 秒以内</strong></td></tr>
+  </table>
+  <p>筛选栏右侧会显示 <code>本地缓存 · 2026-11-03 10:48</code>。</p>
+
+  <div class="box tip">
+    <p><strong>在游戏里解锁了新成就？</strong>点右上角 <strong>「⟳ 刷新」</strong> 重新同步一次。平时不用管。</p>
+    <p>成就图标第一次显示时会从游戏的 DDS 转成 PNG 存到 <code>achievement_icons/</code>，
+    之后就是本地读取（不到 1 毫秒），<strong>断网也能正常显示</strong>。</p>
+  </div>
+
+  <div class="box warn">
+    <p><strong>「全球 X%」需要连上 Steam 接口</strong>，国内网络经常连不上。
+    连不上时这一栏会自动隐藏，右上角显示「全球完成率暂不可用」，其余功能照常。</p>
+    <p>开了加速器之后点一次「刷新」就能补上。</p>
+  </div>
+
+  <div class="box tip">
+    <p>隐藏成就（Steam 上要求保密的那种）解锁前只显示「隐藏成就 · 解锁后显示说明」，解锁后才显示真实描述 ——
+    和 Steam 客户端的行为一致。</p>
+  </div>
+</section>
+
+<!-- ========== 9 ========== -->
+<section id="save">
+  <h2><span class="n">10</span>存档管理</h2>
+
+  <p>列出 <code>save games</code> 目录下所有 <code>.ck3</code> 存档，显示大小和修改时间。</p>
+  <ul>
+    <li><strong>定位</strong> —— 在资源管理器里选中这个文件</li>
+    <li><strong>勾选 + 移入回收站</strong> —— 批量清理旧存档</li>
+  </ul>
+
+  <div class="box danger">
+    <p>删除走的是 <strong>Windows 回收站</strong>，删错了可以右键还原。但铁人档删了就没了，删之前想清楚。</p>
+  </div>
+
+  <p>顺带说明：CK3 的存档是压缩过的二进制格式，<strong>读不出角色名和年份</strong>，所以只能显示文件名、大小、时间——这一点和官方启动器一样。</p>
+</section>
+
+<!-- ========== 7 ========== -->
+<section id="workshop">
+  <h2><span class="n">11</span>创意工坊</h2>
+
+  <ul>
+    <li><strong>打开工坊首页</strong> —— 浏览器打开 CK3 创意工坊</li>
+    <li><strong>在工坊搜索</strong> —— 输入关键词，跳转到 Steam 工坊搜索结果页（找新模组用这个）</li>
+    <li><strong>搜索本机订阅的模组</strong> —— 列表上方那个框，只在你<strong>已经订阅</strong>的模组里筛，支持按名称或 ID 找</li>
+    <li><strong>已订阅清单</strong> —— 列出你所有工坊模组，点「工坊」按钮看它的页面</li>
+    <li><strong>一键注册</strong> —— 见下</li>
+  </ul>
+
+  <h3>「识别新订阅」是干什么的</h3>
+  <p>在创意工坊点订阅后，Steam 只是把文件下载下来，<strong>游戏还认不出它</strong>——必须在
+  <code>mod</code> 文件夹里生成一个叫 <code>ugc_数字.mod</code> 的小描述文件，游戏才知道有这个模组。</p>
+  <p>这个描述文件平时是官方启动器帮你生成的。如果你订阅完直接开本启动器，就会在模组列表里看到
+  标着 <strong style="color:#e3b341">未识别</strong> 的模组，而且加不进播放集。</p>
+  <p>解决办法：点模组管理页右上角的<strong>「识别新订阅」</strong>按钮（有未识别模组时按钮上会显示数字），
+  一键生成，秒完成。没生成过就别管它，按钮是灰的。</p>
+</section>
+
+<!-- ========== 8 ========== -->
+<section id="tools">
+  <h2><span class="n">12</span>文件目录</h2>
+
+  <p>14 个快捷入口，点一下就打开对应目录：</p>
+  <table>
+    <tr><th>入口</th><th>什么时候用</th></tr>
+    <tr><td>游戏根目录</td><td>看版本信息、找 exe</td></tr>
+    <tr><td>游戏 common / events / gui</td><td>自己写 mod 时查原版文件</td></tr>
+    <tr><td>本地 MOD 目录</td><td>看 <code>.mod</code> 文件、放自制 mod</td></tr>
+    <tr><td>创意工坊目录</td><td>看订阅的模组本体</td></tr>
+    <tr><td>日志目录</td><td><strong>游戏报错先看这里的 error.log</strong></td></tr>
+    <tr><td>dlc_load.json</td><td>游戏真正读取的启用列表</td></tr>
+    <tr><td>launcher-v2.sqlite</td><td>官方启动器的播放集数据库</td></tr>
+    <tr><td>自动备份目录</td><td>回滚用，见下一节</td></tr>
+  </table>
+
+  <div class="box tip">
+    <p>游戏崩溃或模组冲突，第一件事是打开<strong>日志目录</strong>看 <code>error.log</code> 末尾，script error 会直接告诉你是哪个模组的哪个文件出错。</p>
+  </div>
+</section>
+
+<!-- ========== 9 ========== -->
+<section id="gamedata">
+  <h2><span class="n">13</span>游戏文件</h2>
+
+  <p>游戏本体在哪、存档和配置存在哪、模组从哪读——这一页一目了然，而且都能改。</p>
+
+  <figure>
+    <img src="img/07-游戏文件.png" alt="游戏文件">
+    <figcaption>三块：游戏本体 / 存档与配置位置 / 模组位置</figcaption>
+  </figure>
+
+  <h3>存档与配置位置</h3>
+  <p>存档、设置、播放集全都放在这个目录里。默认是：</p>
+  <p><code>C:\Users\你的用户名\Documents\Paradox Interactive\Crusader Kings III</code></p>
+
+  <p>点<strong>更改位置</strong>可以换成别的目录，用途比如：</p>
+  <ul>
+    <li>想开两套完全独立的存档（一套纯净、一套大包），互不干扰</li>
+    <li>C 盘快满了，把数据挪到 D 盘</li>
+    <li>用同步盘备份存档</li>
+  </ul>
+
+  <div class="box warn">
+    <p>换目录<strong>不会自动搬存档</strong>。正确的做法是：先把旧目录里的 <code>save games</code> 文件夹复制到新目录，
+    再在启动器里切换。切错了点「恢复游戏默认位置」就能回来。</p>
+  </div>
+
+  <h3>模组位置</h3>
+  <p>两个目录：</p>
+  <ul>
+    <li><strong>本地模组目录</strong> —— <code>数据目录\mod</code>，游戏实际加载的 <code>.mod</code> 文件都在这</li>
+    <li><strong>创意工坊下载目录</strong> —— Steam 订阅的模组下载到哪（一般是 <code>steamapps\workshop\content\1158310</code>）</li>
+  </ul>
+  <p>挪过 Steam 库、或者用了多个硬盘的话，这里可以手动改工坊目录。</p>
+
+  <h3>启动参数 -dataPath</h3>
+  <p>勾上之后，启动游戏时会带 <code>-dataPath</code> 参数，让<strong>游戏本体</strong>也去读你设置的数据目录。
+  只有在你确实换了数据位置、又希望游戏跟着走的时候才需要开。</p>
+  <div class="box tip">
+    <p>这个参数不是所有版本都认。开了之后如果游戏读不到存档，把它关掉就行。</p>
+  </div>
+</section>
+
+<!-- ========== 10 ========== -->
+<section id="memory">
+  <h2><span class="n">14</span>内存管理</h2>
+
+  <figure>
+    <img src="img/08-内存管理.png" alt="内存管理">
+    <figcaption>物理内存、系统提交、一键优化、页文件设置入口</figcaption>
+  </figure>
+
+  <h3>四个数字怎么看</h3>
+  <table>
+    <tr><th>指标</th><th>含义</th></tr>
+    <tr><td>可用内存</td><td>还能拿来用的物理内存。低于 1 GB 时游戏会开始卡</td></tr>
+    <tr><td><strong>系统提交</strong></td><td>物理内存 + 分页文件的总量，<strong>大包真正吃的是这个</strong></td></tr>
+    <tr><td>系统缓存</td><td>Windows 拿来做缓存的内存，这部分<strong>可以随时释放</strong></td></tr>
+    <tr><td>虚拟内存</td><td>你有几个分页文件</td></tr>
+  </table>
+  <p>很多人 16 GB 内存跑 200 模组不崩，靠的就是分页文件把「提交上限」撑到 40 GB。
+  如果提交上限和物理内存差不多（比如都是 16 GB），说明分页文件被关了或设得很小，大包一开就容易被系统直接杀进程。</p>
+
+  <h3>一键优化</h3>
+  <p>做两件事：<strong>清空系统待机内存</strong>（那些"看着被占用、其实可以回收"的缓存），
+  再把各程序的工作集整理一遍。<strong>不会关掉任何程序</strong>。</p>
+  <p>实测能腾出 1~4 GB，进游戏前点一下就行。</p>
+
+  <div class="box warn">
+    <p><strong>清理系统待机内存需要管理员权限。</strong>
+    如果启动器不是以管理员身份运行的，这个按钮会变成灰色并提示「需要管理员权限」，
+    点一下它会让你以管理员身份重新打开——Windows 会弹一个确认框，选「是」就行。</p>
+    <p>不想提权也能用，只是效果会打折扣（只能整理工作集，清不掉系统缓存）。</p>
+  </div>
+
+  <h3>两个启动开关</h3>
+  <ul>
+    <li><strong>启动游戏后最小化启动器</strong> —— 免得挡着游戏窗口</li>
+    <li><strong>启动游戏后关闭启动器</strong> —— 省一点内存，游戏不受影响</li>
+  </ul>
+
+  <h3>虚拟内存 / 页文件</h3>
+  <p>点<strong>打开系统性能选项</strong>会直接跳到 Windows 改虚拟内存的地方：
+  「高级 → 虚拟内存 → 更改」，勾「自动管理」，或者手动把初始大小设成物理内存的 1.5 倍、最大值设成 2 倍，确定后重启。</p>
+  <div class="box tip">
+    <p>改完必须重启电脑才生效。提交上限变大之后，大包稳定性会明显好一些。</p>
+  </div>
+</section>
+
+<!-- ========== 11 ========== -->
+<section id="diag">
+  <h2><span class="n">15</span>崩溃诊断</h2>
+
+  <p>游戏闪退、卡死、白屏、进不去、模组冲突时，用这里收集一份诊断包，发给帮你排查的人。</p>
+
+  <figure>
+    <img src="img/06-崩溃诊断.png" alt="崩溃诊断">
+    <figcaption>点「一键收集」，几秒钟就能得到一份 0.3 MB 左右的诊断包</figcaption>
+  </figure>
+
+  <h3>它收集什么</h3>
+  <table>
+    <tr><th>编号</th><th>内容</th><th>用途</th></tr>
+    <tr><td>00</td><td>系统与硬件</td><td>内存、<strong>提交上限</strong>、显卡、磁盘</td></tr>
+    <tr><td>01</td><td>游戏版本</td><td>确认版本号对不对</td></tr>
+    <tr><td>02</td><td>崩溃记录</td><td>最近 2 次的 exception.txt</td></tr>
+    <tr><td>03</td><td>exceptions</td><td>引擎异常记录</td></tr>
+    <tr><td>04</td><td>游戏日志</td><td>error / game / setup / debug</td></tr>
+    <tr><td>05</td><td>模组列表</td><td>dlc_load.json + 启用数量</td></tr>
+    <tr><td>06</td><td>启动器日志</td><td>官方启动器最近 15 个</td></tr>
+    <tr><td>08</td><td>存档列表</td><td>只记名字和大小</td></tr>
+  </table>
+
+  <div class="box tip">
+    <p><strong>不会打包存档本体</strong>，也不会打包几十 MB 的崩溃转储（.dmp）。超大日志只保留开头 800 行和结尾 3000 行，
+    所以整包通常只有几百 KB，发得出去。</p>
+  </div>
+
+  <h3>怎么用</h3>
+  <ol class="steps">
+    <li>点左边的「崩溃诊断」。</li>
+    <li>需要排查显卡 / 驱动问题的话，勾上「生成 dxdiag 报告」（会多花 10~40 秒）。</li>
+    <li>点<strong>一键收集</strong>，等几秒。</li>
+    <li>收集完会<strong>自动弹出保存窗口</strong>，选个位置存下来即可。</li>
+    <li>把那个 zip 发给帮你排查的人。</li>
+  </ol>
+  <p>如果保存时点了取消，诊断包还在临时目录里，点「打开临时目录」就能找到。</p>
+
+  <h3>结果怎么看</h3>
+  <p>每项前面有 ✓ 就是采到了。下面还有一段<strong>自动摘要</strong>，会直接点出常见问题，比如：</p>
+  <ul>
+    <li><strong>「提交上限与物理内存相差不到 4 GB」</strong> —— 页文件太小或关了，大包启动时系统会直接结束游戏进程，还不留日志</li>
+    <li><strong>「没有任何崩溃记录」</strong> —— 说明不是崩溃，多半是被杀软 / 系统强杀，或者白屏后手动关掉的</li>
+    <li>error.log 有多大、启用了多少个模组</li>
+  </ul>
+
+  <div class="box warn">
+    <p>如果某项显示 <strong>!</strong> 号，不代表收集失败，可能是本来就没有那类文件（比如从没崩溃过就没有 crashes 目录）。
+    这本身也是有意义的信息。</p>
+  </div>
+</section>
+
+<!-- ========== 12 ========== -->
+<section id="settings">
+  <h2><span class="n">16</span>启动器设置</h2>
+
+  <p>点左下角「启动器设置」。这里分四块：</p>
+
+  <figure>
+    <img src="img/05-设置.png" alt="启动器设置">
+    <figcaption>路径 / 数据位置 / 备份管理 / 启动器维护，四块分区</figcaption>
+  </figure>
+
+  <h3>路径设置</h3>
+  <p>三个目录一般会自动探测，<strong>装过多个版本、或移动过游戏目录</strong>时才需要手动改：</p>
+  <table>
+    <tr><th>项目</th><th>该指向哪里</th></tr>
+    <tr><td>游戏根目录</td><td>含 <code>binaries\ck3.exe</code> 的文件夹</td></tr>
+    <tr><td>用户数据目录</td><td>含 <code>mod</code> 文件夹和 <code>launcher-v2.sqlite</code> 的文件夹（通常在「文档\Paradox Interactive」下）</td></tr>
+    <tr><td>创意工坊目录</td><td><code>steamapps\workshop\content\1158310</code></td></tr>
+    <tr><td>游戏版本</td><td>只用于<strong>模组兼容性判断</strong>，不改游戏、不改文件</td></tr>
+  </table>
+  <p>每行右边的「打开」按钮可以先看一眼确认对不对。改完点右上角<strong>保存设置</strong>生效。
+  改乱了就点「重新探测路径」重来。</p>
+
+  <div class="box tip">
+    <p><strong>「游戏版本」这栏平时不用碰。</strong>它只是用来判断模组列表里「兼容 / 版本」标签的基准：
+    拿你填的版本去和每个 mod 声明支持的版本比对。</p>
+    <p><strong>留空 = 自动跟随检测到的真实版本</strong>（最省心）。只有当你需要提前验证某个旧版本下模组兼容性时才手动填，
+    点旁边的<strong>「同步为检测版本」</strong>能一键对齐。</p>
+  </div>
+
+  <h3>数据位置</h3>
+  <p>从上面三个路径推导出来的实际位置，显示模组目录、存档目录在哪，以及当前识别了多少个模组。
+  这里的「重新扫描」等于重读硬盘，装完新模组懒得重启就用它。</p>
+
+  <h3>备份管理</h3>
+  <p>程序每次往游戏数据里写东西前，都会先存一份备份，出问题能退回去。</p>
+  <ul>
+    <li><strong>内容相同的不会重复存</strong>，每种文件最多留 12 份，旧的自动清理</li>
+    <li>点任意一份右边的<strong>恢复</strong>，就会用它覆盖当前文件（覆盖前还会再备份一次当前的，可以反悔）</li>
+    <li><strong>清空全部备份</strong>只是删备份文件，不动当前游戏数据</li>
+  </ul>
+  <div class="box tip">
+    <p>觉得备份占地方？这里能看到总占用，清一下就行。备份通常很小，只有数据库那份是 1 MB 出头。</p>
+  </div>
+
+  <h3>启动器维护</h3>
+  <ul>
+    <li><strong>创建桌面快捷方式</strong> —— 在桌面放一个带图标的快捷方式，省得每次翻文件夹</li>
+    <li><strong>打开数据库目录 / 数据目录</strong> —— 直达文件位置</li>
+  </ul>
+</section>
+
+<!-- ========== 13 ========== -->
+<section id="faq">
+  <h2><span class="n">17</span>常见问题</h2>
+
+  <h3>窗口没弹出来 / 一闪就没了</h3>
+  <p>用压缩包里的 <code>启动器-调试.bat</code>（如果有）或直接在命令行跑 exe 看报错。常见原因是系统缺少 WebView2 运行时——Windows 10/11 一般自带，实在没有可以去微软官网装「WebView2 Runtime」。</p>
+  <p>程序在 WebView2 不可用时会自动改用 Edge 应用模式打开，界面一样。</p>
+
+  <h3>提示「官方启动器正在运行」</h3>
+  <p>Paradox 官方启动器会独占 <code>launcher-v2.sqlite</code> 数据库。把官方启动器<strong>彻底关掉</strong>（注意托盘图标也要右键退出），再点保存。</p>
+
+  <h3>排完序进游戏没变化</h3>
+  <ol>
+    <li>回概览页看有没有黄色警告框</li>
+    <li>有的话点「按当前播放集修复」</li>
+    <li>再确认你进游戏用的是<strong>这个播放集</strong>（顶部下拉框显示的名字）</li>
+  </ol>
+
+  <h3>模组列表是空的</h3>
+  <p>说明路径没探测对。去「启动器设置」，手动选<strong>用户数据目录</strong>（就是有 <code>mod</code> 文件夹和 <code>launcher-v2.sqlite</code> 的那个），保存后会重新扫描。</p>
+
+  <h3>杀毒软件说它是病毒，exe 解压出来就没了</h3>
+  <p>这是<strong>误报</strong>。程序是用 Python 打包的单文件 exe，运行时需要「自己解压自己 → 释放文件到临时目录 → 启动子进程」，
+  这套行为在杀毒软件的机器学习模型里很像病毒，再加上没买数字签名证书，就容易被判成
+  <code>Trojan:Win32/xxx!ml</code>（<strong>末尾的 <code>!ml</code> 就是机器学习猜的</strong>，不是真病毒特征）。</p>
+  <p>解决办法：</p>
+  <ol>
+    <li>Windows Defender：打开「Windows 安全中心 → 病毒和威胁防护 → 保护历史记录」，找到那条记录点<strong>「还原」</strong>，
+      再到「管理设置 → 排除项」把这个文件夹加进去</li>
+    <li>360 / 火绒：把文件夹加到<strong>信任区</strong>，或在拦截弹窗里选「允许」</li>
+  </ol>
+
+  <h3>更新之后打开还是旧界面</h3>
+  <p>多半是<strong>旧窗口还开着</strong>。启动器有单实例限制，旧进程没退干净时，新 exe 双击只会把旧窗口调到前台，
+  你看到的就是旧版本。</p>
+  <p>把任务栏里<strong>所有</strong>「人联启动器」窗口都关掉（包括最小化的），等两三秒再打开新的。</p>
+
+  <h3>成就图标是空白 / 没有「全球 X%」</h3>
+  <ul>
+    <li><strong>图标空白</strong>：图标是从游戏本体 <code>gfx/interface/icons/achievements/</code> 转的。
+      如果你删过游戏文件，或者这个成就在你游戏版本里没有图标，就会退回显示成就名的第一个字。</li>
+    <li><strong>没有全球完成率</strong>：这一项要连 Steam 接口，国内网络经常连不上。开加速器后点「⟳ 刷新」即可。</li>
+  </ul>
+
+  <h3>DLC 显示「未拥有」，但我明明买了</h3>
+  <p>可能原因：</p>
+  <ul>
+    <li>Steam <strong>没开或没登录</strong> —— 问不到授权，本启动器不会乱锁，但也不会显示「已拥有」。</li>
+    <li><strong>缓存是旧的</strong> —— 刚买完不会立刻更新，点右上角<strong>「重新校验」</strong>。</li>
+    <li>用的是<strong>离线模式</strong>或共享账号 —— 授权可能拿不到。</li>
+  </ul>
+
+  <h3>拖压缩包进去提示「没装 7-Zip」</h3>
+  <p>新版已经不需要了：解 <code>7z</code> / <code>rar</code> 用的是 Windows 系统自带的 <code>tar.exe</code>。
+  如果你还在用很老的版本，更新一下就好。</p>
+
+  <h3>会不会把我存档搞坏</h3>
+  <p>不会。程序只碰 <code>launcher-v2.sqlite</code> 和 <code>dlc_load.json</code> 两个文件，从不主动动 <code>save games</code> 里的存档（除非你在存档页自己点删除，那也是进回收站）。</p>
+
+  <h3>能和朋友一起用吗</h3>
+  <p>可以。整个文件夹压缩发给他就行，他电脑上只要有 CK3。模组配置用<strong>导出播放集</strong>分享，比发整个文件夹靠谱。</p>
+
+  <h3>快捷键</h3>
+  <table>
+    <tr><td><kbd>Ctrl</kbd> + <kbd>F</kbd></td><td>模组管理页聚焦搜索框</td></tr>
+    <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td>立即保存当前排序（平时是自动保存的）</td></tr>
+  </table>
+</section>
+
+<!-- ========== 14 ========== -->
+<section id="safe">
+  <h2><span class="n">18</span>数据安全</h2>
+
+  <p>每次写入游戏数据前，都会自动把原文件备份到程序目录下的 <code>backups/</code>：</p>
+  <ul>
+    <li><code>launcher-v2-年月日-时分秒.sqlite</code></li>
+    <li><code>dlc_load-年月日-时分秒.json</code></li>
+  </ul>
+  <p>最多保留最近 30 份，旧的自动清理。</p>
+
+  <h3>怎么回滚</h3>
+  <ol class="steps">
+    <li>关掉启动器和游戏</li>
+    <li>打开 <code>backups</code> 文件夹，按时间找到你要的那份</li>
+    <li>复制回 <code>文档\Paradox Interactive\Crusader Kings III\</code> 覆盖同名文件</li>
+  </ol>
+
+  <div class="box warn">
+    <p>回滚前建议先把当前的 <code>launcher-v2.sqlite</code> 和 <code>dlc_load.json</code> 复制一份出来，免得覆盖掉你最新改好的配置。</p>
+  </div>
+
+  <h3>程序目录里那些 json 是什么</h3>
+  <p>运行过程中会自己生成一些缓存文件，<strong>都是可以随时删的</strong>，删了不会损坏游戏，只是下次要重新读一遍：</p>
+  <table>
+    <tr><th>文件</th><th>内容</th><th>删了会怎样</th></tr>
+    <tr><td><code>launcher-config.json</code></td><td>你的设置（路径、当前游戏等）</td><td>要重新设置路径</td></tr>
+    <tr><td><code>achievement_data_&lt;AppID&gt;.json</code></td><td>成就清单 + 解锁记录</td><td>下次打开重新读 Steam</td></tr>
+    <tr><td><code>achievement_global_&lt;AppID&gt;.json</code></td><td>全球完成率</td><td>重新联网拉</td></tr>
+    <tr><td><code>achievement_icons/</code></td><td>从游戏 DDS 转出的成就图标</td><td>重新转一次（几秒）</td></tr>
+    <tr><td><code>dlc_data_&lt;游戏&gt;.json</code></td><td>DLC 清单 + 授权判定</td><td>重新问一次 Steam</td></tr>
+    <tr><td><code>dlc_detail_cache.json</code></td><td>DLC 详情（介绍、截图）</td><td>重新拉</td></tr>
+    <tr><td><code>mod-aliases.json</code></td><td>你改过的模组显示名</td><td><strong>改名记录会丢</strong></td></tr>
+    <tr><td><code>mod-collections.json</code></td><td>你建的收藏夹</td><td><strong>收藏夹会丢</strong></td></tr>
+    <tr><td><code>backups/</code></td><td>自动备份的 sqlite / json</td><td>就不能回滚了</td></tr>
+  </table>
+  <p>想清清爽爽重来一遍：删掉除 <code>launcher-config.json</code> 和 <code>backups/</code> 之外的那些就行。</p>
+
+  <h3>隐私</h3>
+  <p>程序<strong>不上传任何数据、没有统计和遥测</strong>。界面用的是本机回环端口（只监听 <code>127.0.0.1</code>，外部访问不到）。</p>
+  <p>会联网的只有这三处，而且都可以不用：</p>
+  <ul>
+    <li><strong>DLC 授权校验</strong> —— 大部分情况下是问<strong>本机 Steam 客户端</strong>，不经过互联网</li>
+    <li><strong>DLC 详情弹窗</strong> —— 去 Steam 商店拉介绍和截图（有本地缓存，7 天）</li>
+    <li><strong>成就的「全球 X%」</strong> —— 请求 Steam 的公开统计接口（只发游戏 ID，不带任何个人信息）</li>
+  </ul>
+  <p>这三处连不上时程序都会自动降级，不影响其他功能。</p>
+</section>
+
+<footer>
+  人联启动器 v1.4<br>
+  <span style="color:var(--gold)">反馈群：793826682　·　小黑盒：人联永不服输</span><br>
+  本工具为第三方自制，与 Paradox Interactive 无隶属关系。
+</footer>
+
+</div>
+</body>
+</html>
