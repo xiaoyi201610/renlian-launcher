@@ -205,9 +205,12 @@ def parse_branches(appid: str | int) -> list[dict]:
 
 def branches_or_fallback(appid: str | int) -> list[dict]:
     br = parse_branches(appid)
-    if br:
-        return br
-    return [{"key": k, "desc": d, "buildid": 0} for k, d in _FALLBACK_CK3]
+    if not br:
+        br = [{"key": k, "desc": d, "buildid": 0} for k, d in _FALLBACK_CK3]
+    # 「默认公开版本」(public) 通常不在 appinfo 的分支描述里，单独补上并置顶
+    if not any(b.get("key") == "public" for b in br):
+        br.insert(0, {"key": "public", "desc": "默认公开版本（游戏最常见版本）", "buildid": 0})
+    return br
 
 
 # ---------------------------------------------------------------- 当前分支 / 写入

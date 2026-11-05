@@ -1,7 +1,7 @@
 {
-  "version": "1.6.4",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.4/renlian-launcher_v1.6.4.zip",
-  "notes": "版本切换体验完善：确认后显示「正在关闭并重启 Steam，约 10–30 秒」提示并防止重复点击；修复版本配置里「浏览」按钮点击无反应；版本配置新增「数据隔离」说明与一键开启 -dataPath（Steam 切版本只换游戏程序，存档/模组默认各版本共用，开启 -dataPath 后才会按版本目录真正隔离）。",
+  "version": "1.6.5",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.5/renlian-launcher_v1.6.5.zip",
+  "notes": "版本切换补全「默认公开版本(public)」：此前 appinfo 里 public 不带分支描述而被漏掉，现已单独补上并置顶（所有游戏通用）。",
   "date": "2026-11-05",
   "size": "25.2MB"
 }
