@@ -228,15 +228,14 @@ def get_beta(appid: str | int) -> dict:
 
 
 def steam_running() -> bool:
-    """Steam 是否在运行（用于切换前的守卫）。"""
+    """Steam 是否在运行（用字节比对，避免中文系统 tasklist 输出 GBK 导致解码异常）。"""
     try:
         out = subprocess.run(
             ["tasklist", "/FI", "IMAGENAME eq steam.exe", "/NH"],
-            capture_output=True, text=True, timeout=8,
+            capture_output=True, timeout=8,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-        txt = (out.stdout or "").lower()
-        return "steam.exe" in txt
+        ).stdout or b""
+        return b"steam.exe" in out.lower()
     except Exception:
         return False
 
@@ -297,24 +296,41 @@ def steam_exe_path() -> str:
     return p if os.path.isfile(p) else ""
 
 
+def process_running(exe_name: str) -> bool:
+    """某进程是否在运行（字节比对，避免 GBK 解码问题）。"""
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {exe_name}", "/NH"],
+            capture_output=True, timeout=8,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).stdout or b""
+        return exe_name.lower().encode() in out.lower()
+    except Exception:
+        return False
+
+
 def quit_steam(wait_seconds: int = 0) -> bool:
-    """优雅退出 Steam（steam://exit），失败则 taskkill；可选等待其完全退出。"""
+    """退出 Steam：先 steam://exit；10s 内没退就 taskkill /F（含 webhelper）；再等待完全退出。"""
+    import time as _t
     try:
         os.startfile("steam://exit")  # noqa: S606
     except Exception:
-        try:
-            subprocess.run(
-                ["taskkill", "/IM", "steam.exe"],
-                capture_output=True, timeout=8,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-        except Exception:
-            pass
-    if wait_seconds > 0:
-        import time as _t
-        t0 = _t.time()
-        while _t.time() - t0 < wait_seconds and steam_running():
-            _t.sleep(1)
+        pass
+    t0 = _t.time()
+    while _t.time() - t0 < 10 and steam_running():
+        _t.sleep(1)
+    if steam_running():
+        for exe in ("steam.exe", "steamwebhelper.exe"):
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", exe], capture_output=True, timeout=8,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except Exception:
+                pass
+    deadline = _t.time() + (wait_seconds if wait_seconds > 0 else 15)
+    while _t.time() < deadline and steam_running():
+        _t.sleep(1)
     return not steam_running()
 
 

@@ -1405,7 +1405,11 @@ class Handler(BaseHTTPRequestHandler):
                 # 切换 Steam 版本分支（写 appmanifest BetaKey + 置 StateFlags 需更新）
                 # restart=true 时自动：关 Steam → 写清单 → 开 Steam（由 Steam 自行下载该分支）
                 code = CTX.game
-                appid = core.GAME_DEFS.get(code, core.GAME_DEFS["ck3"]).get("appid", "1158310")
+                gd = core.GAME_DEFS.get(code, core.GAME_DEFS["ck3"])
+                appid = gd.get("appid", "1158310")
+                exe_name = (gd.get("exe") or ("", "ck3.exe"))[-1]
+                if steambeta.process_running(exe_name):
+                    self._json({"ok": False, "error": "检测到游戏进程仍在（可能是上次残留的僵尸进程）。请先完全退出游戏；若已关闭，请重启电脑清掉残留进程后再切换（Steam 无法更新被占用的文件）"}); return
                 key = body.get("key") or ""
                 restart = bool(body.get("restart"))
                 if restart and steambeta.steam_running():
