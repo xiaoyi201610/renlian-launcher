@@ -264,6 +264,24 @@ const I18N_DICT = {
     'wiki.counteredBy': '被克制（受其压制）',
     'wiki.effects': '效果',
     'wiki.noEffects': '该传统没有可直接展示的数值效果，具体以游戏内为准。',
+
+    'wiki.sortType': '分类顺序',
+
+    'wiki.sortDamage': '伤害最高',
+
+    'wiki.sortToughness': '坚韧最高',
+
+    'wiki.sortPursuit': '追击最高',
+
+    'wiki.sortScreen': '掩护最高',
+
+    'wiki.cost': '招募花费',
+
+    'wiki.maintLow': '平时维护',
+
+    'wiki.maintHigh': '战时维护',
+
+    'wiki.recruitReq': '招募条件',
     'wiki.flavor': '简介',
     'wiki.dlcTag': 'DLC',
     'wiki.tradName': '传统',
@@ -511,6 +529,24 @@ const I18N_DICT = {
     'wiki.counteredBy': 'Countered by',
     'wiki.effects': 'Effects',
     'wiki.noEffects': 'No numeric effects to display; check in game for details.',
+
+    'wiki.sortType': 'By type',
+
+    'wiki.sortDamage': 'Highest damage',
+
+    'wiki.sortToughness': 'Highest toughness',
+
+    'wiki.sortPursuit': 'Highest pursuit',
+
+    'wiki.sortScreen': 'Highest screen',
+
+    'wiki.cost': 'Recruit cost',
+
+    'wiki.maintLow': 'Peacetime upkeep',
+
+    'wiki.maintHigh': 'Wartime upkeep',
+
+    'wiki.recruitReq': 'Recruit requirements',
     'wiki.flavor': 'Flavor',
     'wiki.dlcTag': 'DLC',
     'wiki.tradName': 'Tradition',
@@ -758,6 +794,24 @@ const I18N_DICT = {
     'wiki.counteredBy': 'Contré par',
     'wiki.effects': 'Effets',
     'wiki.noEffects': 'Aucun effet chiffré à afficher ; voir en jeu.',
+
+    'wiki.sortType': 'Par type',
+
+    'wiki.sortDamage': 'Dégâts max',
+
+    'wiki.sortToughness': 'Ténacité max',
+
+    'wiki.sortPursuit': 'Poursuite max',
+
+    'wiki.sortScreen': 'Protection max',
+
+    'wiki.cost': 'Coût de recrutement',
+
+    'wiki.maintLow': 'Entretien (paix)',
+
+    'wiki.maintHigh': 'Entretien (guerre)',
+
+    'wiki.recruitReq': 'Conditions de recrutement',
     'wiki.flavor': 'Description',
     'wiki.dlcTag': 'DLC',
     'wiki.tradName': 'Tradition',
@@ -1005,6 +1059,24 @@ const I18N_DICT = {
     'wiki.counteredBy': 'Gekontert von',
     'wiki.effects': 'Effekte',
     'wiki.noEffects': 'Keine numerischen Effekte vorhanden; Details im Spiel.',
+
+    'wiki.sortType': 'Nach Typ',
+
+    'wiki.sortDamage': 'Höchster Schaden',
+
+    'wiki.sortToughness': 'Höchste Zähigkeit',
+
+    'wiki.sortPursuit': 'Höchste Verfolgung',
+
+    'wiki.sortScreen': 'Höchster Schutz',
+
+    'wiki.cost': 'Rekrutierungskosten',
+
+    'wiki.maintLow': 'Unterhalt (Frieden)',
+
+    'wiki.maintHigh': 'Unterhalt (Krieg)',
+
+    'wiki.recruitReq': 'Rekrutierungsbedingungen',
     'wiki.flavor': 'Beschreibung',
     'wiki.dlcTag': 'DLC',
     'wiki.tradName': 'Tradition',
@@ -1252,6 +1324,24 @@ const I18N_DICT = {
     'wiki.counteredBy': 'Kontras av',
     'wiki.effects': 'Effekter',
     'wiki.noEffects': 'Inga siffereffekter att visa; se i spelet.',
+
+    'wiki.sortType': 'Efter typ',
+
+    'wiki.sortDamage': 'Högst skada',
+
+    'wiki.sortToughness': 'Högst seghet',
+
+    'wiki.sortPursuit': 'Högst förföljelse',
+
+    'wiki.sortScreen': 'Högst skydd',
+
+    'wiki.cost': 'Rekryteringskostnad',
+
+    'wiki.maintLow': 'Underhåll (fred)',
+
+    'wiki.maintHigh': 'Underhåll (krig)',
+
+    'wiki.recruitReq': 'Rekryteringskrav',
     'wiki.flavor': 'Beskrivning',
     'wiki.dlcTag': 'DLC',
     'wiki.tradName': 'Tradition',

@@ -940,13 +940,13 @@ footer{
   <h3>七个标签页</h3>
   <table>
     <tr><th>标签</th><th>条目</th><th>能查到什么</th></tr>
-    <tr><td><strong>⚔ 军队兵种</strong></td><td>111</td><td>伤害、坚韧、追击、掩护、规模、攻城、补给；展开还有简介、克制 / 被克制、地形加成、冬季加成</td></tr>
+    <tr><td><strong>⚔ 军队兵种</strong></td><td>111</td><td>伤害、坚韧、追击、掩护、规模、攻城、补给，外加<strong>招募花费 / 平时维护 / 战时维护 / 招募条件</strong>；展开还有简介、克制 / 被克制、地形加成、冬季加成</td></tr>
     <tr><td><strong>🏛 文化</strong></td><td>244</td><td>文化精神、文化传承、语言，该文化拥有的全部传统（含 DLC 传统，三列表格）</td></tr>
     <tr><td><strong>✦ 传统</strong></td><td>197</td><td>实际效果条目 + 简介，外加「哪些文化拥有这项传统」</td></tr>
     <tr><td><strong>☪ 宗教</strong></td><td>49</td><td>所属宗教组、简介，以及该宗教配置的全部教义</td></tr>
     <tr><td><strong>✧ 信条</strong></td><td>97</td><td>效果条目、简介，按「通用 / 需 DLC」筛选</td></tr>
     <tr><td><strong>⚖ 教义</strong></td><td>126</td><td>按教义组筛选（共 49 组，<strong>用下拉框</strong>）、效果条目、简介</td></tr>
-    <tr><td><strong>⚙ 革新</strong></td><td>108</td><td>所属时代、民政 / 军事类别、相关能力、效果</td></tr>
+    <tr><td><strong>⚙ 革新</strong></td><td>108</td><td>所属时代（按部落→早期→盛期→晚期顺序排列）、民政 / 军事类别、相关能力、效果</td></tr>
   </table>
 
   <h3>先看顶部那张「基础克制关系」环形图</h3>
@@ -955,12 +955,20 @@ footer{
   <ul>
     <li><strong>散兵</strong> 克 <strong>重步兵</strong></li>
     <li><strong>重步兵</strong> 克 <strong>长枪兵</strong></li>
-    <li><strong>长枪兵</strong> 克 <strong>轻骑兵 / 重骑兵</strong></li>
-    <li><strong>轻骑兵 / 重骑兵</strong> 克 <strong>弓箭手</strong></li>
+    <li><strong>长枪兵</strong> 克 <strong>轻/重骑兵</strong></li>
+    <li><strong>轻/重骑兵</strong> 克 <strong>弓箭手</strong></li>
     <li><strong>弓箭手</strong> 克 <strong>散兵</strong></li>
   </ul>
   <p>每个兵种展开后还会单独列出<strong>「克制（对其伤害提升）」</strong>和<strong>「被克制（受其压制）」</strong>，
   列表行右侧也会直接标一个「克 XXX」，不用点开就能看到。</p>
+  <div class="box tip">
+    <p>兵种分类按<strong>散兵 → 重步兵 → 弓箭手 → 铳手 → 长枪兵 → 轻骑兵 → 重骑兵 →
+    骆驼骑兵 → 弓骑兵 → 战象 → 攻城武器 → 斡儿朵 → 农民民兵</strong>固定排列，列表也照这个顺序。
+    搜索框旁边的下拉框可以改按<strong>伤害 / 坚韧 / 追击 / 掩护最高</strong>排序。</p>
+    <p>有特殊招募限制的兵种（如侍、长弓手），列表行会挂一个橙色<strong>「招募条件」</strong>标记；
+    展开后能看到具体条件（需要哪个革新、哪个文化参数、有什么禁止项），
+    以及<strong>招募花费、平时维护、战时维护</strong>三个数值。</p>
+  </div>
 
   <h3>怎么查</h3>
   <ol class="steps">

@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 19                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 24                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 目录名（相对 gameRoot）
 D_MAA = os.path.join("common", "men_at_arms_types")
@@ -136,7 +136,40 @@ MODIFIER_NAMES = {
     "development_growth": ("发展度成长","Development growth"),
     "monthly_income_mult": ("每月收入","Monthly income"),
     "dynasty_house_opinion": ("家族好感","Dynasty house opinion"),
+    "development_growth_factor": ("发展度成长","Development growth"),
+    "men_at_arms_cap": ("兵士上限","Men-at-arms cap"),
+    "men_at_arms_limit": ("兵士数量上限","Men-at-arms limit"),
+    "men_at_arms_title_limit": ("按头衔的兵士上限","Men-at-arms limit per title"),
+    "men_at_arms_maintenance": ("兵士维护费","Men-at-arms maintenance"),
+    "monthly_income_from_herd_mult": ("畜群月收入","Monthly income from herds"),
+    "naval_movement_speed_mult": ("海军航行速度","Naval movement speed"),
+    "domain_tax_mult": ("领地税收","Domain tax"),
+    "different_culture_opinion": ("异文化好感","Different culture opinion"),
+    "same_faith_opinion": ("同信仰好感","Same faith opinion"),
+    "siege_phase_time": ("围城阶段耗时","Siege phase time"),
+    "vassal_limit": ("封臣上限","Vassal limit"),
+    "same_culture_mercenary_hire_cost_mult": ("同文化雇佣兵花费","Same culture mercenary cost"),
+    "mercenary_count_mult": ("雇佣兵数量","Mercenary count"),
+    "building_slot_add": ("建筑槽位","Building slots"),
+    "epidemic_resistance": ("瘟疫抗性","Epidemic resistance"),
 }
+
+# 引擎动态生成的 custom 文案（官方本地化里只有函数，清洗后为空）
+STAT_NAMES = {
+    "damage": ("伤害","Damage"), "toughness": ("坚韧","Toughness"),
+    "pursuit": ("追击","Pursuit"), "screen": ("掩护","Screen"),
+    "siege_value": ("攻城","Siege"), "stack": ("规模","Stack"),
+}
+
+def _custom_name(key: str, zh: bool = True) -> str:
+    m = re.fullmatch(r"unlock_siege_maa_(first|second|third|fourth)_level", key)
+    if m:
+        cn = {"first": "一", "second": "二", "third": "三", "fourth": "四"}[m.group(1)]
+        en = {"first": 1, "second": 2, "third": 3, "fourth": 4}[m.group(1)]
+        return ("解锁第%s级地域攻城器械兵士" % cn) if zh else ("Unlocks tier %d regional siege men-at-arms" % en)
+    if key.startswith("eligible_accolade_") and key.endswith("_attribute"):
+        return "可授予对应勋章属性" if zh else "Grants access to an accolade attribute"
+    return ""
 
 # `partners = { ... }` 里的键（婚姻类传统没有 parameters，效果全在这）
 PARTNER_NAMES = {
@@ -317,9 +350,29 @@ DYNAMIC_NAMES = {
 # 游戏里没有独立本地化文案的机制参数，给一份简明的说明
 PARAMETER_NAMES = {
     "faith_coherence_high": ("信仰凝聚力较高", "High faith coherence"),
+    "faith_coherence_normal": ("信仰凝聚力中等", "Normal faith coherence"),
     "faith_coherence_low": ("信仰凝聚力较低", "Low faith coherence"),
     "can_only_be_learned_in_person": ("只能当面学习（口述传承）", "Can only be learned in person"),
 }
+
+# 兵种分类顺序：基础兵种按游戏内克制链排，特殊/地域兵种在后
+MAA_TYPE_ORDER = [
+    "skirmishers", "heavy_infantry", "archers", "gunpowder", "pikemen",
+    "light_cavalry", "heavy_cavalry", "camel_cavalry", "archer_cavalry",
+    "elephant_cavalry", "siege_weapon", "nomadic_horde", "peasant_militia",
+]
+# 文化时代顺序（不能按条目数排，否则「晚期」会跑到「早期」前面）
+ERA_ORDER = [
+    "culture_era_tribal", "culture_era_early_medieval",
+    "culture_era_high_medieval", "culture_era_late_medieval",
+]
+
+
+def _order_index(seq, key, default=999):
+    try:
+        return seq.index(key)
+    except ValueError:
+        return default
 
 
 def _scan_loc(loc_dir: str, needed: set, prefixes=()) -> dict:
@@ -388,6 +441,8 @@ def _resolve(text: str, raw: dict, sv: dict | None = None, depth: int = 3) -> st
     if "[" in text:
         def frep(m):
             s = m.group(0)
+            if "GetTextIcon" in s or "GetIcon" in s:
+                return ""          # 图标函数不能展开成文字，否则「宫廷礼制宫廷礼制…」
             tm = _TRAIT_PAT.search(s)
             if tm:
                 return _trait_name(tm.group(1), raw)
@@ -466,7 +521,151 @@ def _mod_list(inner: str, loc: dict) -> list:
     return out
 
 
-def _collect_maa(game_root: str, loc: dict, loc_lang: str) -> list:
+def _load_cost_values(game_root: str) -> dict:
+    """解析 common/script_values 里的招募花费与维护费。
+
+    两种写法：`@名字 = 45`（常量）、`名字 = @[base * mult]`（不带 @ 的别名）。
+    注意文件里存在同名自引用别名，必须分两套命名空间，优先用 @ 常量。
+    """
+    at, plain = {}, {}
+    for f in glob.glob(os.path.join(game_root, D_SV, "*.txt")):
+        try:
+            text = _read(f)
+        except Exception:
+            continue
+        for line in text.splitlines():
+            line = line.split("#", 1)[0].rstrip()
+            m = re.match(r"^\s*(@?)([A-Za-z0-9_]+)\s*=\s*(.+?)\s*$", line)
+            if not m:
+                continue
+            k, v = m.group(2), m.group(3).strip()
+            if not re.fullmatch(r"-?[\d.]+|@\[[^\]]*\]", v):
+                continue
+            (at if m.group(1) else plain)[k] = v
+    out, busy = {}, set()
+
+    def ev(name, depth=0):
+        if name in out:
+            return out[name]
+        if depth > 4 or name in busy:
+            return None
+        expr = at.get(name)
+        if expr is None:
+            expr = plain.get(name)
+        if expr is None:
+            return None
+        busy.add(name)
+        e = expr[2:-1] if expr.startswith("@[") and expr.endswith("]") else expr
+        # 算式里的引用可能是 @名字，也可能是裸名字
+        e = re.sub(r"@?([A-Za-z_][A-Za-z0-9_]*)",
+                   lambda mm: str(ev(mm.group(1), depth + 1) or 0), e)
+        v = None
+        if re.fullmatch(r"[\d.\s+\-*/()]+", e):
+            try:
+                v = float(eval(e, {"__builtins__": {}}, {}))
+            except Exception:
+                v = None
+        else:
+            try:
+                v = float(expr)
+            except Exception:
+                v = None
+        busy.discard(name)
+        if v is not None:
+            out[name] = v
+        return v
+
+    for k in list(at) + list(plain):
+        ev(k)
+    return out
+
+
+def _recruit_reqs(body: str, loc: dict, zh: bool = True) -> list:
+    """把 can_recruit 条件块翻译成可读的中文招募要求。"""
+    cr = _sub(body, "can_recruit") or ""
+    if not cr:
+        return []
+    out = []
+
+    def add(t):
+        if t and t not in out:
+            out.append(t)
+
+    # 文化参数解锁（最常见）：valid_for_maa_trigger = { PARAMETER = unlock_maa_xxx }
+    for p in re.findall(r"PARAMETER\s*=\s*([A-Za-z0-9_]+)", cr):
+        add(loc.get("culture_parameter_" + p) or loc.get(p + "_name") or loc.get(p))
+    # 革新
+    for i in re.findall(r"has_innovation\s*=\s*([a-z_0-9]+)", cr):
+        t = loc.get(i + "_name") or loc.get(i)
+        if t:
+            add(("需要革新：" if zh else "Requires innovation: ") + t)
+    # NOT 块里的禁止条件
+    for nb in _sub_all(cr, "NOT"):
+        for p in re.findall(r"has_cultural_parameter\s*=\s*([a-z_0-9]+)", nb):
+            t = loc.get("culture_parameter_" + p) or loc.get(p + "_name")
+            if t:
+                add(("不可拥有：" if zh else "Must not have: ") + t)
+    # 正向文化参数（排除整个 NOT 块，含嵌套，避免与「不可拥有」重复）
+    cr_pos = cr
+    for nb in (_sub_all(cr, "NOT") or []):
+        cr_pos = cr_pos.replace(nb, "")
+    for p in re.findall(r"has_cultural_parameter\s*=\s*([a-z_0-9]+)", cr_pos):
+        add(loc.get("culture_parameter_" + p) or loc.get(p + "_name"))
+    # 政体
+    for g in re.findall(r"has_government\s*=\s*([a-z_0-9]+)", cr):
+        t = loc.get(g) or loc.get(g + "_name")
+        if t:
+            add(("限定政体：" if zh else "Government: ") + t)
+    # 特殊触发器（脚本名，游戏里没有本地化键）
+    special = {
+        "culture_uses_eastern_siege_weapons_trigger": ("仅限东方攻城器械文化", "Eastern siege weapons culture only"),
+        "is_landless_adventurer": ("仅限无地冒险者", "Landless adventurer only"),
+        "mpo_can_recruit_nomad_maa_trigger": ("需游牧制（斡儿朵）", "Requires nomadic government"),
+        "any_accolade": ("需要对应勋章属性", "Requires an appropriate accolade"),
+    }
+    for k, pair in special.items():
+        if k in cr:
+            add(pair[0] if zh else pair[1])
+    # 王朝 perk
+    for p in re.findall(r"has_dynasty_perk\s*=\s*([a-z_0-9]+)", cr):
+        t = loc.get(p) or loc.get(p + "_name")
+        if t:
+            add(("需要王朝传承：" if zh else "Dynasty perk: ") + t)
+    return out[:6]
+
+
+def _type_aliases(raw: dict, zh: bool = True) -> dict:
+    """部分兵种类型键是自引用（值就是 `[key|E]`），概念展开后会变成空白。
+    统一覆盖成可读类型名，按界面语言给中文或英文。"""
+    for k, pair in TYPE_NAMES.items():
+        v = raw.get(k, "")
+        if not v or v.strip() in ("[%s|E]" % k, "[%s|E]" % k.lower()):
+            raw[k] = pair[0] if zh else pair[1]
+    return raw
+
+
+def _trait_aliases(game_root: str, raw: dict) -> dict:
+    """特质的显示名常写在 `name = { ... desc = trait_xxx }` 里，而不是 `trait_<key>`。
+
+    例：hajjaj 的真实名字键是 trait_hajji（朝觐者）。把别名直接注入本地化表，
+    [GetTrait('hajjaj').GetName] 就不会再显示成英文 Hajjaj。
+    """
+    for f in glob.glob(os.path.join(game_root, "common", "traits", "*.txt")):
+        try:
+            text = _read(f)
+        except Exception:
+            continue
+        for k, b in _top_blocks(text):
+            nb = _sub(b, "name")
+            if not nb:
+                continue
+            m = re.search(r"\bdesc\s*=\s*([A-Za-z0-9_]+)", nb)
+            if m and m.group(1) in raw and k not in raw:
+                raw[k] = raw[m.group(1)]
+    return raw
+
+
+def _collect_maa(game_root: str, loc: dict, loc_lang: str, costs: dict) -> list:
     out = []
     for f in sorted(glob.glob(os.path.join(game_root, D_MAA, "*.txt"))):
         defines = _read_defines(f)
@@ -481,6 +680,21 @@ def _collect_maa(game_root: str, loc: dict, loc_lang: str) -> list:
                 if v.startswith("@"):
                     v = defines.get(v[1:], "")
                 return _int(v)
+
+            def cost_of(field):
+                """buy_cost = { gold = xxx_recruitment_cost } → 真实数值。"""
+                blk = _sub(body, field)
+                if not blk:
+                    return None
+                g = (_val(blk, "gold") or "").lstrip("@")
+                if not g:
+                    return None
+                v = costs.get(g)
+                if v is None:
+                    v = _int(g)
+                if v is None:
+                    return None
+                return round(v, 2) if v % 1 else int(v)
 
             terrain = _mod_list(_sub(body, "terrain_bonus") or "", loc)
 
@@ -534,13 +748,17 @@ def _collect_maa(game_root: str, loc: dict, loc_lang: str) -> list:
                 "stack": num("stack"),
                 "siege": num("siege_value"),
                 "provision": num("provision_cost"),
+                "cost": cost_of("buy_cost"),
+                "maintLow": cost_of("low_maintenance_cost"),
+                "maintHigh": cost_of("high_maintenance_cost"),
+                "recruit": _recruit_reqs(body, loc, loc_lang == "simp_chinese"),
                 "terrain": terrain,
                 "counters": counters,
                 "winter": winter,
                 "flags": flags,
                 "src": os.path.basename(f),
             })
-    out.sort(key=lambda x: (x["type"], x["name"]))
+    out.sort(key=lambda x: (_order_index(MAA_TYPE_ORDER, x["type"]), x["name"]))
     return out
 
 
@@ -743,6 +961,24 @@ def _collect_traditions(game_root: str, loc: dict, zh: bool = True) -> tuple:
 
 # ---------------------------------------------------------------- 扩展百科（通用条目）
 
+def _loc_any(loc: dict, key: str, first=None) -> str:
+    """效果文案的键名没有统一前缀，按命中率从高到低依次尝试。
+
+    实测：`custom` / `unlock_law` / `unlock_maa` 大多是 `<key>_name`，
+    `unlock_building` 是 `building_<key>`，`parameters` 是 `culture_parameter_<key>`。
+    """
+    cands = list(first or ()) + [
+        key + "_name", key, "culture_parameter_" + key,
+        "doctrine_parameter_" + key, "tenet_parameter_" + key,
+        "game_concept_" + key, "building_" + key,
+    ]
+    for c in cands:
+        v = loc.get(c)
+        if v:
+            return v
+    return ""
+
+
 def _generic_effects(body: str, loc: dict, prefixes=(), zh=True) -> list:
     """从 parameters / special_parameters / 修正块里抽效果文案。
 
@@ -778,14 +1014,42 @@ def _generic_effects(body: str, loc: dict, prefixes=(), zh=True) -> list:
                             eff.append("%s %s" % (nm, v))
     # 革新解锁的法律 / 自定义效果
     for law in re.findall(r"^\tunlock_law\s*=\s*([a-z_0-9]+)", body, re.M):
-        nm = loc.get(law) or loc.get(law + "_name")
+        nm = _loc_any(loc, law)
         if nm:
             eff.append(("解锁：" if zh else "Unlocks: ") + nm)
     for c in re.findall(r"^\tcustom\s*=\s*([a-z_0-9]+)", body, re.M):
-        t = loc.get("culture_parameter_" + c) or loc.get(c)
+        t = _loc_any(loc, c) or _custom_name(c, zh)
         if t:
             eff.append(t)
-    for blk in ("character_modifier", "personal_tenet_modifier", "culture_modifier"):
+    # maa_upgrade = { type = heavy_infantry  toughness = 10 } 这种块
+    for ub in _sub_all(body, "maa_upgrade") or []:
+        t = _val(ub, "type")
+        if not t:
+            continue
+        tn = loc.get(t) or loc.get(t + "_attribute") or t
+        bits = []
+        for k, v in _pairs(ub).items():
+            if k == "type":
+                continue
+            pair = STAT_NAMES.get(k)
+            nm = (pair[0] if zh else pair[1]) if pair else (loc.get(k) or _mn(MODIFIER_NAMES, k, zh))
+            if nm:
+                bits.append("%s %s" % (nm, _fmt_num(v)))
+        if bits:
+            eff.append(("%s%s" % (tn, "：" if zh else ": ")) + ("、".join(bits) if zh else ", ".join(bits)))
+    # 革新的其它解锁字段（这些以前整段漏掉，导致 40 条革新没有效果）
+    for fld, pair in (
+        ("unlock_maa", ("解锁兵士：", "Unlocks men-at-arms: ")),
+        ("unlock_building", ("解锁建筑：", "Unlocks building: ")),
+        ("unlock_casus_belli", ("解锁宣战理由：", "Unlocks casus belli: ")),
+        ("maa_upgrade", ("兵士升级：", "Men-at-arms upgrade: ")),
+    ):
+        for v in re.findall(r"^\t" + fld + r"\s*=\s*([a-z_0-9]+)", body, re.M):
+            t = _loc_any(loc, v)
+            if t:
+                eff.append((pair[0] if zh else pair[1]) + t)
+    for blk in ("character_modifier", "personal_tenet_modifier", "culture_modifier",
+                "county_modifier", "province_modifier", "clergy_modifier"):
         mb = _sub(body, blk)
         if not mb:
             continue
@@ -1037,15 +1301,27 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
                             needed.update((p, "culture_parameter_" + p,
                                            "doctrine_parameter_" + p,
                                            "tenet_parameter_" + p))
-                    # 革新解锁的法律 / 自定义效果
-                    for fld in ("unlock_law", "custom"):
+                    # 革新解锁 / 兵种招募条件的文案键
+                    for fld in ("unlock_law", "custom", "unlock_maa", "unlock_building",
+                                "unlock_casus_belli", "maa_upgrade", "has_innovation",
+                                "has_government", "has_dynasty_perk", "has_cultural_parameter"):
                         for v in re.findall(r"^\t" + fld + r"\s*=\s*([a-z_0-9]+)", body, re.M):
-                            needed.update((v, v + "_name", "culture_parameter_" + v))
+                            needed.update((v, v + "_name", "culture_parameter_" + v,
+                                           "building_" + v, "game_concept_" + v))
+                    cr = _sub(body, "can_recruit")
+                    if cr:
+                        for fld in ("PARAMETER", "has_innovation", "has_government",
+                                    "has_cultural_parameter", "has_dynasty_perk"):
+                            for v in re.findall(r"\b" + fld + r"\s*=\s*([A-Za-z_0-9]+)", cr):
+                                needed.update((v, v + "_name", "culture_parameter_" + v,
+                                               "game_concept_" + v))
                     # 宗教引用的教义名
                     for dk in re.findall(r"^\tdoctrine\s*=\s*([a-z_0-9]+)", body, re.M):
                         needed.update((dk, dk + "_name"))
 
         raw = _scan_loc(loc_dir, needed, WIDE_PREFIXES)
+        _trait_aliases(game_root, raw)   # hajjaj → 朝觐者 这类特质别名
+        _type_aliases(raw, loc_lang == "simp_chinese")   # heavy_infantry → 重步兵（自引用键）
 
         # 引用展开：译名/效果里会引用 `$键$`、`[概念|E]`、`[GetMaA('x')]`，
         # 把这些被引用的键也补扫回来（做两轮，够覆盖二级引用）
@@ -1067,7 +1343,8 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
 
         # 2) 正式抽取
         traditions, trad_map = _collect_traditions(game_root, loc, zh)
-        maa = _collect_maa(game_root, loc, loc_lang)
+        costs = _load_cost_values(game_root)
+        maa = _collect_maa(game_root, loc, loc_lang, costs)
         cultures = _collect_cultures(game_root, loc, trad_map)
         doctrines = _collect_doctrines(game_root, loc, zh)
         doc_names = {d["key"]: d["name"] for d in doctrines}
@@ -1088,11 +1365,22 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
         for m in maa:
             m["counteredBy"] = countered.get(m["type"], [])
 
+        # 展示用的 5 节点闭环：轻骑兵 + 重骑兵合并成「轻/重骑兵」一组
+        cav = "轻/重骑兵" if loc_lang == "simp_chinese" else "Light/Heavy Cavalry"
+        cn = lambda k: tname.get(k, k)
+        chain = [
+            {"fromName": cn("skirmishers"), "toName": cn("heavy_infantry")},
+            {"fromName": cn("heavy_infantry"), "toName": cn("pikemen")},
+            {"fromName": cn("pikemen"), "toName": cav},
+            {"fromName": cav, "toName": cn("archers")},
+            {"fromName": cn("archers"), "toName": cn("skirmishers")},
+        ]
+
         cnt = {}
         for m in maa:
             cnt[m["type"]] = cnt.get(m["type"], 0) + 1
         types_info = [{"key": t, "name": tname.get(t, t), "count": cnt[t]}
-                      for t in sorted(cnt, key=lambda x: -cnt[x])]
+                      for t in sorted(cnt, key=lambda x: (_order_index(MAA_TYPE_ORDER, x), x))]
 
         data = {
             "ok": True,
@@ -1115,7 +1403,9 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
             "buildMs": int((time.time() - t0) * 1000),
             "types": sorted({m["type"] for m in maa if m["type"]}),
             "typesInfo": types_info,
+            "catOrders": {"innovations": ERA_ORDER, "maa": MAA_TYPE_ORDER},
             "counterCycle": cycle,
+            "counterChain": chain,
             "tradCats": sorted({t["cat"] for t in traditions}),
         }
         _MEM[mem_key] = (sig, data)

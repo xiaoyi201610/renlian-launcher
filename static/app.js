@@ -474,7 +474,7 @@ function bindNav() {
 
 /* ---------------- 百科（军队 / 文化 / 传统） ---------------- */
 const WIKI_SITE = 'https://ck3.paradoxwikis.com/';
-const WIKI_ST = { data: null, owners: null, tab: 'maa', q: '', cat: '', open: '', force: false };
+const WIKI_ST = { data: null, owners: null, tab: 'maa', q: '', cat: '', open: '', force: false, sort: 'type' };
 const WIKI_GENERIC = ['religions', 'tenets', 'doctrines', 'innovations'];
 const WK_LABEL = { damage: 'wiki.damage', toughness: 'wiki.toughness', pursuit: 'wiki.pursuit', screen: 'wiki.screen' };
 
@@ -564,9 +564,14 @@ function wikiItems() {
   const d = WIKI_ST.data, q = WIKI_ST.q.trim().toLowerCase(), cat = WIKI_ST.cat;
   const hit = s => !q || String(s || '').toLowerCase().includes(q);
   if (WIKI_ST.tab === 'maa') {
-    return (d.maa || []).filter(m =>
+    const arr = (d.maa || []).filter(m =>
       (!cat || m.type === cat) &&
       (hit(m.name) || hit(m.nameEn) || hit(m.key) || hit(m.typeName)));
+    // 默认保持后端的「基础兵种 → 特殊兵种」分类顺序；其余按数值降序
+    const key = { damage: 'damage', toughness: 'toughness', pursuit: 'pursuit', screen: 'screen' }[WIKI_ST.sort];
+    if (!key) return arr;
+    return arr.slice().sort((a, b) => (Number(b[key]) || 0) - (Number(a[key]) || 0) ||
+      String(a.name).localeCompare(String(b.name), 'zh'));
   }
   if (WIKI_ST.tab === 'cultures') {
     return (d.cultures || []).filter(c =>
@@ -574,10 +579,19 @@ function wikiItems() {
       (hit(c.name) || hit(c.key) || hit(c.ethos && c.ethos.name) || hit(c.heritage && c.heritage.name)));
   }
   if (WIKI_GENERIC.indexOf(WIKI_ST.tab) >= 0) {
-    return (d[WIKI_ST.tab] || []).filter(x =>
+    const arr = (d[WIKI_ST.tab] || []).filter(x =>
       (!cat || x.catKey === cat) &&
       (hit(x.name) || hit(x.key) || hit(x.desc) || hit(x.cat) ||
        (x.effects || []).some(hit) || (x.links || []).some(hit)));
+    const order = (d.catOrders || {})[WIKI_ST.tab] || [];
+    if (order.length) {
+      return arr.slice().sort((a, b) => {
+        const ia = order.indexOf(a.catKey), ib = order.indexOf(b.catKey);
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) ||
+          String(a.name).localeCompare(String(b.name), 'zh');
+      });
+    }
+    return arr;
   }
   return (d.traditions || []).filter(t =>
     (!cat || t.cat === cat) &&
@@ -605,7 +619,15 @@ function wikiFilters() {
       if (!seen[k]) seen[k] = { v: k, label: x.cat || T('wiki.all'), n: 0 };
       seen[k].n += 1;
     });
-    return Object.values(seen).sort((a, b) => b.n - a.n);
+    const arr = Object.values(seen);
+    const order = (d.catOrders || {})[WIKI_ST.tab] || [];
+    if (order.length) {
+      return arr.sort((a, b) => {
+        const ia = order.indexOf(a.v), ib = order.indexOf(b.v);
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || b.n - a.n;
+      });
+    }
+    return arr.sort((a, b) => b.n - a.n);
   }
   return (d.tradCats || []).map(c => ({
     v: c, label: c, n: (d.traditions || []).filter(t => t.cat === c).length,
@@ -614,25 +636,15 @@ function wikiFilters() {
 
 /* 顶部基础克制闭环：环形图（节点 + 顺时针箭头） */
 function wikiCycleCard() {
-  const cyc = WIKI_ST.data.counterCycle || [];
-  if (!cyc.length) return '';
-  const rows = [];
-  const idx = {};
-  cyc.forEach(c => {
-    const k = c.from.key;
-    if (!(k in idx)) { idx[k] = rows.length; rows.push({ from: c.from, to: [c.to] }); }
-    else rows[idx[k]].to.push(c.to);
-  });
-  if (rows.length < 5) return '';
-  const label = i => rows[i] ? rows[i].from.name : '';
-  const arch = rows.find(r => r.from.key === 'archers');
-  const archLabel = arch ? arch.from.name : label(3);
+  // 后端已把轻骑兵 + 重骑兵合并成「轻/重骑兵」一组，直接用 5 节点闭环
+  const chain = WIKI_ST.data.counterChain || [];
+  if (chain.length < 5) return '';
   const nodes = [
-    { x: 210, y: 46, t: label(0) },                                  // 散兵
-    { x: 352, y: 116, t: label(1) },                                   // 重步兵
-    { x: 296, y: 222, t: label(2) },                                   // 长枪兵
-    { x: 124, y: 222, t: (rows[2].to || []).map(o => o.name).join(' / ') || label(3) }, // 轻/重骑兵
-    { x: 68, y: 116, t: archLabel },                                   // 弓箭手
+    { x: 210, y: 46, t: chain[0].fromName },     // 散兵
+    { x: 352, y: 116, t: chain[1].fromName },    // 重步兵
+    { x: 296, y: 222, t: chain[2].fromName },    // 长枪兵
+    { x: 124, y: 222, t: chain[3].fromName },    // 轻/重骑兵
+    { x: 68, y: 116, t: chain[4].fromName },     // 弓箭手
   ];
   const r = 38;
   const edges = [];
@@ -656,14 +668,14 @@ function wikiCycleCard() {
           const txt = parts.length > 1
             ? `<text x="${n.x}" y="${n.y - 3}" text-anchor="middle" class="wk-cyc-text small">
                  ${parts.map((p, i) => `<tspan x="${n.x}" dy="${i === 0 ? 0 : 15}">${esc(p)}</tspan>`).join('')}</text>`
-            : `<text x="${n.x}" y="${n.y + 4}" text-anchor="middle" class="wk-cyc-text">${esc(n.t)}</text>`;
+            : `<text x="${n.x}" y="${n.y + 4}" text-anchor="middle" class="wk-cyc-text${n.t.length > 4 ? ' small' : ''}">${esc(n.t)}</text>`;
           return `<g><circle cx="${n.x}" cy="${n.y}" r="${r}" class="wk-cyc-circle"/>${txt}</g>`;
         }).join('')}
       </svg>
       <div class="wk-cycle-note">
         <div class="wk-hint">${esc(T('wiki.baseCounterHint'))}</div>
         <div class="wk-cyc-legend">
-          ${rows.map(rw => `<div><b>${esc(rw.from.name)}</b> ➜ ${rw.to.map(o => esc(o.name)).join(' / ')}</div>`).join('')}
+          ${chain.map(c => `<div><b>${esc(c.fromName)}</b> ➜ ${esc(c.toName)}</div>`).join('')}
         </div>
       </div>
     </div>
@@ -678,7 +690,8 @@ function wikiRow(it) {
     const ct = (it.counters || []).slice(0, 3).map(c => c.name).join('、');
     line = `<span class="wk-name">${esc(it.name)}<small>${esc(it.nameEn || '')}</small></span>
       <span class="wk-tag">${esc(it.typeName || it.type)}</span>
-      <span class="wk-mini">${esc(T('wiki.damage'))} ${wnum(it.damage)} · ${esc(T('wiki.toughness'))} ${wnum(it.toughness)} · ${esc(T('wiki.stack'))} ${wnum(it.stack)}</span>
+      <span class="wk-mini">${esc(T('wiki.damage'))} ${wnum(it.damage)} · ${esc(T('wiki.toughness'))} ${wnum(it.toughness)} · ${esc(T('wiki.stack'))} ${wnum(it.stack)} · ${esc(T('wiki.cost'))} ${wnum(it.cost)}</span>
+      ${(it.recruit || []).length ? `<span class="wk-need">${esc(T('wiki.recruitReq'))}</span>` : ''}
       ${ct ? `<span class="wk-ctr-mini">${esc(T('wiki.counterShort'))} ${esc(ct)}</span>` : ''}`;
     if (open) {
       detail = `${it.flavor ? `<div class="wk-flavor">${esc(it.flavor)}</div>` : ''}
@@ -690,7 +703,12 @@ function wikiRow(it) {
           ${wstat(T('wiki.stack'), wnum(it.stack))}
           ${wstat(T('wiki.siege'), wnum(it.siege))}
           ${wstat(T('wiki.provision'), wnum(it.provision))}
+          ${wstat(T('wiki.cost'), wnum(it.cost))}
+          ${wstat(T('wiki.maintLow'), wnum(it.maintLow))}
+          ${wstat(T('wiki.maintHigh'), wnum(it.maintHigh))}
         </div>
+        ${(it.recruit || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.recruitReq'))}</div>
+          <ul class="wk-eff">${it.recruit.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>` : ''}
         ${(it.counters || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.countersTo'))}</div>
           <div class="wk-chips">${it.counters.map(c => `<span class="wk-chip bad">${esc(c.name)} <i>×${wnum(c.mult)}</i></span>`).join('')}</div>
         </div>` : ''}
@@ -750,7 +768,9 @@ function wikiRow(it) {
         ${it.desc ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.flavor'))}</div>
           <div class="wk-desc">${esc(it.desc)}</div></div>` : ''}
         ${ef.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.effects'))} (${ef.length})</div>
-          <ul class="wk-eff">${ef.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+          <ul class="wk-eff">${ef.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`
+          : `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.effects'))}</div>
+          <div class="wk-pd">${esc(T('wiki.noEffects'))}</div></div>`}
         ${links.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.linked'))} (${links.length})</div>
           <div class="wk-chips">${links.map(n => `<span class="wk-chip">${esc(n)}</span>`).join('')}</div>
         </div>` : ''}
@@ -800,6 +820,13 @@ function paintWiki() {
   ];
   const items = wikiItems();
   const cats = [{ v: '', label: T('wiki.all'), n: null }].concat(wikiFilters());
+  const sortOpts = [
+    { v: 'type', label: T('wiki.sortType') },
+    { v: 'damage', label: T('wiki.sortDamage') },
+    { v: 'toughness', label: T('wiki.sortToughness') },
+    { v: 'pursuit', label: T('wiki.sortPursuit') },
+    { v: 'screen', label: T('wiki.sortScreen') },
+  ];
   // 分类太多了（教义有 49 组）就换成下拉，别把胶囊铺满屏
   const useSelect = cats.length > 14;
 
@@ -822,6 +849,10 @@ function paintWiki() {
 
     <div class="wk-toolbar">
       <input class="inp wk-search" id="wkQ" value="${esc(WIKI_ST.q)}" placeholder="${esc(T('wiki.search'))}">
+      ${WIKI_ST.tab === 'maa'
+        ? `<select class="inp wk-sel wk-sortsel" id="wkSort">${sortOpts.map(o =>
+            `<option value="${o.v}" ${WIKI_ST.sort === o.v ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`
+        : ''}
       ${useSelect
         ? `<select class="inp wk-sel" id="wkSel">${cats.map(c =>
             `<option value="${esc(c.v)}" ${WIKI_ST.cat === c.v ? 'selected' : ''}>${esc(c.label)}${c.n !== null ? ' (' + c.n + ')' : ''}</option>`).join('')}</select>`
@@ -845,6 +876,8 @@ function paintWiki() {
   });
   const sel = $('#wkSel');
   if (sel) sel.onchange = () => { WIKI_ST.cat = sel.value; WIKI_ST.open = ''; paintWiki(); };
+  const so = $('#wkSort');
+  if (so) so.onchange = () => { WIKI_ST.sort = so.value; WIKI_ST.open = ''; paintWiki(); };
   const q = $('#wkQ');
   if (q) {
     q.oninput = () => {

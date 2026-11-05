@@ -1215,3 +1215,8 @@ body{
   border-radius:8px;padding:0 10px;font-size:12.5px;min-width:180px}
 .wk-sel:focus{outline:none;border-color:var(--gold)}
 .wk-cyc-text.small{font-size:10px}
+
+/* --- 百科：招募条件标记 / 排序下拉 --- */
+.wk-sortsel{min-width:136px;flex:none}
+.wk-need{font-size:11px;color:var(--orange);border:1px solid rgba(210,153,34,.42);
+  border-radius:5px;padding:1px 6px;white-space:nowrap;flex:none}
