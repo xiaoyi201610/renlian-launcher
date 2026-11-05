@@ -1,7 +1,7 @@
 {
-  "version": "1.6.12",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.12/renlian-launcher_v1.6.12.zip",
-  "notes": "版本配置的数据目录新增「打开」按钮：像「打开 MOD 目录」一样直接在资源管理器打开该数据目录（保留「浏览」用于修改路径）。",
+  "version": "1.6",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6/renlian-launcher_v1.6.zip",
+  "notes": "1.6 正式版。此前的 1.6.1–1.6.12 均为 1.5 系列测试版，本版为 1.6 正式版：新增「版本切换」独立页（多版本配置 + 通过 Steam 切换游戏版本、全游戏分支抓取、自动关/重启 Steam）、版本配置独立数据目录与 -dataPath 隔离、文件夹选择定位当前目录，以及若干修复。",
   "date": "2026-11-05",
   "size": "25.2MB"
 }

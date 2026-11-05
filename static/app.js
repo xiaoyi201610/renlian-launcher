@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.6.12';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.6';   // 与 make_release.py 的 VERSION 保持一致（1.6 正式版）
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
