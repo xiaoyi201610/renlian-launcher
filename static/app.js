@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.6.6';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.6.7';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -3346,10 +3346,6 @@ async function renderSettings() {
       <div class="form-row"><div class="lab">${esc(T('settings.currentVersion'))}</div>
         <div class="val"><span style="font-size:13px;color:var(--gold-b);font-weight:600">v${LAUNCHER_VERSION}</span>
         <button class="btn sm ghost" id="cCheckUpd">${esc(T('settings.checkUpdate'))}</button></div></div>
-      <div class="form-row"><div class="lab">${esc(T('settings.updateUrl'))}</div>
-        <div class="val"><input type="text" id="cUpdUrl" value="${esc(c.updateUrl || '')}" placeholder="https://你的域名/人联启动器/version.json"
-          style="flex:1;min-width:220px">
-        <button class="btn sm ghost" id="cUpdSave">${esc(T('common.saveSettings'))}</button></div></div>
       <div id="updResult" class="upd-result" style="display:none"></div>
     </div>
 
@@ -3545,12 +3541,11 @@ async function renderSettings() {
     renderSettings();
   };
 
-  // 版本自检：保存地址并检查
+  // 版本自检：内置固定更新源，无需用户填地址
   const checkUpdate = async () => {
-    const url = $('#cUpdUrl').value.trim();
     const box = $('#updResult');
-    if (!url) { box.style.display = 'block'; box.className = 'upd-result upd-warn';
-      box.textContent = T('settings.updateNoUrl'); return; }
+    const url = (c && c.updateUrl && /^https?:/i.test(c.updateUrl))
+      ? c.updateUrl : 'https://gitee.com/xiaoyi2233/renlian-launcher/raw/master/version.json';
     box.style.display = 'block'; box.className = 'upd-result upd-loading';
     box.textContent = T('settings.checking');
     const r = await post('/api/check-update', { url, current: LAUNCHER_VERSION });
@@ -3567,10 +3562,6 @@ async function renderSettings() {
     }
   };
   $('#cCheckUpd').onclick = checkUpdate;
-  $('#cUpdSave').onclick = async () => {
-    const r = await post('/api/config', { updateUrl: $('#cUpdUrl').value.trim() });
-    toast(r.ok ? T('settings.updateUrlSaved') : T('settings.saveFailed'), r.ok ? 'ok' : 'err');
-  };
   $('#cReload').onclick = async () => {
     await post('/api/config', { gameRoot: '', userDir: '', workshopDir: '' });
     await refreshState(); renderSettings();
