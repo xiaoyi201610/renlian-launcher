@@ -241,13 +241,13 @@ def steam_running() -> bool:
         return False
 
 
-def set_beta(appid: str | int, new_key: str) -> dict:
-    """把 appmanifest 的 BetaKey 改为 new_key。
+def set_beta(appid: str | int, new_key: str, force_update: bool = True) -> dict:
+    """把 appmanifest 的 BetaKey 改为 new_key，并（默认）把 StateFlags 置为「需要更新」。
 
     安全约束：
-      - Steam 运行中 → 拒绝（改动会被覆盖）。
+      - Steam 运行中 → 拒绝（改动会被覆盖；调用方应先 quit_steam + wait）。
       - 写前备份 <acf>.bak。
-      - 只替换 UserConfig 里的 BetaKey 值，其余字节不动。
+      - 只替换 BetaKey 值 / 调整 StateFlags，其余字节不动。
     """
     new_key = (new_key or "").strip()
     if not new_key:
@@ -258,8 +258,7 @@ def set_beta(appid: str | int, new_key: str) -> dict:
     if steam_running():
         return {"ok": False, "error": "请先完全退出 Steam 再切换（否则改动会被覆盖）", "need_close": True}
     try:
-        raw = open(p, "rb").read()
-        text = raw.decode("utf-8", errors="ignore")
+        text = open(p, "rb").read().decode("utf-8", errors="ignore")
         backup = p + ".bak"
         try:
             shutil.copy2(p, backup)
@@ -267,17 +266,65 @@ def set_beta(appid: str | int, new_key: str) -> dict:
             backup = ""
         m = re.search(r'("BetaKey"\s*")([^"]*)(")', text)
         if m:
-            if m.group(2) == new_key:
-                return {"ok": True, "key": new_key, "unchanged": True, "manifest": p, "backup": backup}
             text2 = text[:m.start(2)] + new_key + text[m.end(2):]
         else:
-            # 没有 BetaKey → 在 UserConfig { 后插入
             mu = re.search(r'("UserConfig"\s*\{)', text)
             if not mu:
                 return {"ok": False, "error": "清单里没有 UserConfig 段，无法写入"}
             ins = mu.end()
             text2 = text[:ins] + '\n\t\t"BetaKey"\t\t"%s"' % new_key + text[ins:]
+        # 置 StateFlags |= 2（Update Required），Steam 启动后才会真正下载所选分支
+        if force_update:
+            mf = re.search(r'("StateFlags"\s*")(\d+)(")', text2)
+            if mf:
+                try:
+                    nv = str(int(mf.group(2)) | 2)
+                except ValueError:
+                    nv = "6"
+                text2 = text2[:mf.start(2)] + nv + text2[mf.end(2):]
         open(p, "wb").write(text2.encode("utf-8", errors="ignore"))
-        return {"ok": True, "key": new_key, "manifest": p, "backup": backup}
+        return {"ok": True, "key": new_key, "manifest": p, "backup": backup,
+                "forceUpdate": bool(force_update)}
     except Exception as ex:
         return {"ok": False, "error": str(ex)}
+
+
+def steam_exe_path() -> str:
+    root = steam_root()
+    if not root:
+        return ""
+    p = os.path.join(root, "steam.exe")
+    return p if os.path.isfile(p) else ""
+
+
+def quit_steam(wait_seconds: int = 0) -> bool:
+    """优雅退出 Steam（steam://exit），失败则 taskkill；可选等待其完全退出。"""
+    try:
+        os.startfile("steam://exit")  # noqa: S606
+    except Exception:
+        try:
+            subprocess.run(
+                ["taskkill", "/IM", "steam.exe"],
+                capture_output=True, timeout=8,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except Exception:
+            pass
+    if wait_seconds > 0:
+        import time as _t
+        t0 = _t.time()
+        while _t.time() - t0 < wait_seconds and steam_running():
+            _t.sleep(1)
+    return not steam_running()
+
+
+def launch_steam() -> bool:
+    try:
+        exe = steam_exe_path()
+        if exe:
+            os.startfile(exe)  # noqa: S606
+        else:
+            os.startfile("steam://open/main")  # noqa: S606
+        return True
+    except Exception:
+        return False

@@ -536,11 +536,26 @@ def add_profile(code: str, data: dict) -> dict:
             }]
     name = (data.get("name") or "").strip() or "新版本"
     pid = _new_profile_id(profiles)
+    udir = (data.get("userDir") or "").strip()
+    if not udir:
+        # 自动给新版本分配一个独立用户数据目录：避免空目录被自动探测回默认目录，
+        # 从而破坏「版本之间文件互相独立」。放在默认数据目录的兄弟位置。
+        base = (g.get("userDir") or detect_user_dir(code) or "").strip()
+        if base:
+            parent = os.path.dirname(base.rstrip("\\/"))
+            leaf = os.path.basename(base.rstrip("\\/"))
+            safe = "".join(ch for ch in name if ch not in '\\/:*?"<>|').strip() or pid
+            cand = os.path.join(parent, f"{leaf} - {safe}")
+            try:
+                os.makedirs(cand, exist_ok=True)
+            except Exception:
+                pass
+            udir = cand
     prof = {
         "id": pid, "name": name,
         "gameVersion": (data.get("gameVersion") or "").strip(),
         "gameRoot": (data.get("gameRoot") or "").strip(),
-        "userDir": (data.get("userDir") or "").strip(),
+        "userDir": udir,
         "workshopDir": (data.get("workshopDir") or "").strip(),
     }
     profiles.append(prof)

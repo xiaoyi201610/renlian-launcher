@@ -1402,10 +1402,19 @@ class Handler(BaseHTTPRequestHandler):
                     "branches": steambeta.branches_or_fallback(appid),
                 }); return
             if p == "/api/steam/switch":
-                # 切换 Steam 版本分支（写 appmanifest BetaKey；需 Steam 已退出）
+                # 切换 Steam 版本分支（写 appmanifest BetaKey + 置 StateFlags 需更新）
+                # restart=true 时自动：关 Steam → 写清单 → 开 Steam（由 Steam 自行下载该分支）
                 code = CTX.game
                 appid = core.GAME_DEFS.get(code, core.GAME_DEFS["ck3"]).get("appid", "1158310")
-                r = steambeta.set_beta(appid, body.get("key") or "")
+                key = body.get("key") or ""
+                restart = bool(body.get("restart"))
+                if restart and steambeta.steam_running():
+                    if not steambeta.quit_steam(wait_seconds=35):
+                        self._json({"ok": False, "error": "Steam 未能自动关闭，请手动完全退出 Steam 后再试"}); return
+                r = steambeta.set_beta(appid, key)
+                if r.get("ok") and restart:
+                    steambeta.launch_steam()
+                    r["steamRestarted"] = True
                 self._json(r); return
             if p == "/api/pick-dir":
                 self._json({"ok": True, "path": pick_directory(body.get("initial") or "")}); return

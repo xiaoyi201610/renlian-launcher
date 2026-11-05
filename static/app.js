@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.6.2';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.6.3';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -3258,8 +3258,9 @@ async function renderSettings() {
         <button class="btn sm ghost" data-pick="cWork">${esc(T('common.browse'))}</button>
         <button class="btn sm ghost" data-openpath="cWork">${esc(T('common.open'))}</button></div></div>
       <div class="form-row"><div class="lab">${esc(T('settings.gameVersion'))}</div>
-        <div class="val"><input type="text" id="cVer" value="${esc(c.gameVersion || '')}" style="max-width:110px" placeholder="${esc(T('settings.gameVersionPh'))}">
+        <div class="val"><input type="text" id="cVer" value="${esc(c.gameVersion || st.version || '')}" style="max-width:110px" placeholder="${esc(T('settings.gameVersionPh'))}">
         <button class="btn sm ghost" id="cVerSync">${esc(T('settings.syncVersion'))}</button>
+        <button class="btn sm ghost" id="cVerRefresh">${esc(T('settings.refresh'))}</button>
         <span class="hint">${esc(T('settings.detected'))} <b style="color:var(--gold-b)">${esc(st.versionFull || st.version || '—')}</b></span></div>
         <div class="hint" style="margin:6px 0 0 0;line-height:1.6">
           ${esc(T('settings.gameVersionNote'))}
@@ -3381,14 +3382,21 @@ async function renderSettings() {
   if (vlist) {
     const vps = (c.profiles || []);
     vlist.innerHTML = vps.map(p => `
-      <div class="ver-pf-row ${p.active ? 'active' : ''}">
-        <input class="inp ver-pf-name" data-pf="${esc(p.id)}" data-f="name" value="${esc(p.name)}" placeholder="${esc(T('settings.profileName'))}">
-        <input class="inp ver-pf-ver" data-pf="${esc(p.id)}" data-f="ver" value="${esc(p.gameVersion || '')}" placeholder="${esc(T('settings.profVerPh'))}" style="width:92px">
-        ${p.active
-          ? `<span class="ver-pf-tag">${esc(T('settings.profActive'))}</span>`
-          : `<button class="btn sm ghost" data-pfact="switch" data-id="${esc(p.id)}">${esc(T('settings.setActive'))}</button>`}
-        <button class="btn sm ghost" data-pfact="save" data-id="${esc(p.id)}">${esc(T('common.saveSettings'))}</button>
-        ${vps.length > 1 ? `<button class="btn sm danger" data-pfact="del" data-id="${esc(p.id)}">${esc(T('common.delete'))}</button>` : ''}
+      <div class="ver-pf-row ${p.active ? 'active' : ''}" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input class="inp ver-pf-name" data-pf="${esc(p.id)}" data-f="name" value="${esc(p.name)}" placeholder="${esc(T('settings.profileName'))}" style="flex:1;min-width:120px">
+          <input class="inp ver-pf-ver" data-pf="${esc(p.id)}" data-f="ver" value="${esc(p.gameVersion || '')}" placeholder="${esc(T('settings.profVerPh'))}" style="width:80px">
+          ${p.active
+            ? `<span class="ver-pf-tag">${esc(T('settings.profActive'))}</span>`
+            : `<button class="btn sm ghost" data-pfact="switch" data-id="${esc(p.id)}">${esc(T('settings.setActive'))}</button>`}
+          <button class="btn sm ghost" data-pfact="save" data-id="${esc(p.id)}">${esc(T('common.saveSettings'))}</button>
+          ${vps.length > 1 ? `<button class="btn sm danger" data-pfact="del" data-id="${esc(p.id)}">${esc(T('common.delete'))}</button>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:12px;color:var(--dim);min-width:60px">${esc(T('settings.profDir'))}</span>
+          <input class="inp ver-pf-dir" data-pf="${esc(p.id)}" data-f="dir" id="pfdir_${esc(p.id)}" value="${esc(p.userDir || '')}" placeholder="${esc(T('settings.profDirPh'))}" style="flex:1">
+          <button class="btn sm ghost" data-pick="pfdir_${esc(p.id)}">${esc(T('common.browse'))}</button>
+        </div>
       </div>`).join('');
     $$('#verProfileList [data-pfact]').forEach(b => b.onclick = async () => {
       const id = b.dataset.id, act = b.dataset.pfact;
@@ -3405,7 +3413,9 @@ async function renderSettings() {
         const row = b.closest('.ver-pf-row');
         const name = row.querySelector('[data-f=name]').value.trim();
         const ver = row.querySelector('[data-f=ver]').value.trim();
-        const r = await post('/api/profile/update', { id, name, gameVersion: ver });
+        const dirEl = row.querySelector('[data-f=dir]');
+        const dir = dirEl ? dirEl.value.trim() : '';
+        const r = await post('/api/profile/update', { id, name, gameVersion: ver, userDir: dir });
         if (r.ok) { S.state = r.state; afterProfileChange(); toast(T('common.saved'), 'ok'); }
         else toast(r.error || T('common.failed'), 'err');
       }
@@ -3435,12 +3445,11 @@ async function renderSettings() {
       steamSel.innerHTML = (r.branches || []).map(b =>
         `<option value="${esc(b.key)}" ${b.key === r.current ? 'selected' : ''}>${esc(b.key)}${b.desc ? ' — ' + esc(b.desc) : ''}</option>`).join('');
       if (r.steamRunning) {
-        hint.innerHTML = '<span style="color:var(--danger,#e24b4a)">' + esc(T('settings.steamRunningWarn')) + '</span>';
-        sw.disabled = true;
+        hint.innerHTML = '<span style="color:var(--danger,#e24b4a)">' + esc(T('settings.steamAutoRestart')) + '</span>';
       } else {
         hint.textContent = T('settings.steamCloseHint');
-        sw.disabled = false;
       }
+      sw.disabled = false;
     };
     loadSteam();
     $('#steamRefresh').onclick = loadSteam;
@@ -3448,15 +3457,23 @@ async function renderSettings() {
       const key = steamSel.value;
       if (!key) return;
       if (!confirm(T('settings.steamSwitchConfirm', { v: key }))) return;
-      const r = await post('/api/steam/switch', { key });
-      if (r.ok) { toast(T('settings.steamSwitched', { v: key }), 'ok'); loadSteam(); }
-      else toast(r.error || T('common.failed'), 'err');
+      const r = await post('/api/steam/switch', { key, restart: true });
+      if (r.ok) {
+        toast(T('settings.steamSwitched', { v: key }), 'ok');
+        loadSteam();
+        await refreshState();
+      } else toast(r.error || T('common.failed'), 'err');
     };
   }
 
   $('#cVerSync').onclick = () => {
     $('#cVer').value = st.version || '';
     toast('已同步为检测版本', 'ok');
+  };
+  $('#cVerRefresh').onclick = async () => {
+    await refreshState();
+    render();
+    toast(T('settings.versionRefreshed'), 'ok');
   };
   $('#cLang').onchange = async (e) => {
     const lang = e.target.value;
