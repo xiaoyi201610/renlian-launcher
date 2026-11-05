@@ -159,6 +159,7 @@ footer{
     <li><a href="#workshop">创意工坊</a></li>
     <li><a href="#tools">文件目录</a></li>
     <li><a href="#gamedata">游戏文件</a></li>
+    <li><a href="#versions">版本切换（多版本 / Steam）</a></li>
     <li><a href="#memory">内存管理</a></li>
     <li><a href="#diag">崩溃诊断</a></li>
     <li><a href="#settings">启动器设置</a></li>
@@ -844,12 +845,87 @@ footer{
   只有在你确实换了数据位置、又希望游戏跟着走的时候才需要开。</p>
   <div class="box tip">
     <p>这个参数不是所有版本都认。开了之后如果游戏读不到存档，把它关掉就行。</p>
+    <p>如果你是想让<strong>不同游戏版本各用各的存档和模组</strong>，建议直接用左边的「版本切换」页，
+    那里有配套的一键开关和说明，见第 14 节。</p>
   </div>
 </section>
 
 <!-- ========== 10 ========== -->
+<section id="versions">
+  <h2><span class="n">14</span>版本切换（多版本 / Steam）</h2>
+
+  <p>侧边栏的「版本切换」页是 1.6 新增的，把两件<strong>完全不同</strong>的事放在了一起。先分清它们，后面的操作就不会乱：</p>
+
+  <table>
+    <tr><th>你想做的事</th><th>用哪一张卡</th><th>它实际改的是</th></tr>
+    <tr><td>把<strong>游戏本体</strong>换成 1.19 / 1.20 之类的历史版本</td><td>通过 Steam 切换游戏版本</td><td>Steam 清单里的分支，游戏文件由 Steam 重新下载</td></tr>
+    <tr><td>让两套版本<strong>各用各的存档和模组</strong></td><td>版本配置（多版本）</td><td>用户数据目录（存档 / 模组 / 设置）</td></tr>
+  </table>
+
+  <div class="box warn">
+    <p>最常见的一个误会：切了「版本配置」，以为游戏本体也跟着换版本了——<strong>不会</strong>。
+    版本配置只换数据目录，游戏跑的还是同一个 exe。要换本体必须走下面的 Steam 分支。</p>
+  </div>
+
+  <h3>版本配置（多版本，各管各的数据）</h3>
+  <p>每个游戏都能建任意多套配置。建到 2 套以上，顶栏就会出现一个<strong>版本下拉</strong>，选一下等于整套切换。</p>
+  <ul>
+    <li><strong>名称 / 版本号</strong> —— 自己看着方便的标签，其中版本号还会用于模组的兼容性判断</li>
+    <li><strong>数据目录</strong> —— 这一套的存档和模组放哪。<strong>浏览</strong>改路径，<strong>打开</strong>直接在资源管理器里看</li>
+    <li><strong>设为当前 / 保存 / 删除</strong> —— 至少保留一套；删掉当前那套会自动退回第一套</li>
+  </ul>
+
+  <p>点「新增版本配置」时，程序会自动建一个独立目录（默认数据目录旁边的兄弟目录，
+  形如 <code>…\Crusader Kings III - 1.19</code>），不用自己想名字，省得两个版本串在一起。</p>
+
+  <div class="box tip">
+    <p>新建的目录是<strong>空的</strong>，所以第一次切过去会看到「全新存档 + 没有模组」，这是正常的。
+    正确用法：把那个版本要用的模组和存档<strong>复制进这个目录</strong>，两边就彻底分开了。</p>
+    <p>如果你本来就只想共用一套存档，那不用改数据目录，保持默认即可。</p>
+  </div>
+
+  <h3>要真隔离，得开「-dataPath」</h3>
+  <p>游戏本体<strong>默认只读</strong><code>文档\Paradox Interactive\…</code> 那个目录。你在这里填了别的数据目录，
+  必须让游戏启动时带上 <code>-dataPath</code> 参数，它才会真的去读你填的那个。</p>
+  <p>这张卡里就有一个开关，点一下开启 / 取消，不用再去别的页面找。卡片上会实时显示当前状态：</p>
+  <ul>
+    <li><strong>已开启</strong> —— 各版本各用各的目录，真正隔离</li>
+    <li><strong>未开启</strong> —— 所有版本共用同一个默认目录，存档和模组会混在一起</li>
+  </ul>
+
+  <h3>通过 Steam 切换游戏版本（换本体）</h3>
+  <p>这跟你在 Steam 里点「属性 → 测试版」选一个分支，改的是<strong>同一个字段</strong>（清单里的 <code>BetaKey</code>），
+  只是这里少点几下。所以它做的事和 Steam 里切换完全等价，不存在「启动器专用版本」。</p>
+
+  <ol class="steps">
+    <li>在下拉里选一个分支（列表自动抓当前游戏在 Steam 里的<strong>全部分支</strong>，「默认公开版本」排在最前）</li>
+    <li>点<strong>切换</strong>，弹窗里确认「确认并重启 Steam」</li>
+    <li>启动器自动<strong>关闭 Steam → 写入分支 → 重启 Steam</strong>（约 10–30 秒，期间别重复点）</li>
+    <li>Steam 开始下载这个版本，<strong>等它下完</strong>再点「开始游戏」</li>
+  </ol>
+
+  <p>支持的游戏：十字军之王 III、群星、钢铁雄心 IV、欧陆风云 IV / V、维多利亚 3、十字军之王 II、
+  帝皇：罗马、城市：天际线 1 / 2 —— 切到哪个游戏，就抓哪个游戏的分支列表，各算各的。</p>
+
+  <div class="box warn">
+    <p><strong>切换前游戏必须完全退出。</strong>游戏开着时 Steam 不会更新，文件也会被占用。</p>
+    <p>如果任务管理器里还残留一个 <code>ck3.exe</code>（内存很小、结束任务也杀不掉），那是上次异常退出留下的
+    僵尸进程，<strong>只能重启电脑</strong>清掉。否则 Steam 会一直显示在下载、进度却一动不动。</p>
+  </div>
+
+  <div class="box tip">
+    <p>切换前会自动把清单备份成 <code>appmanifest_&lt;AppID&gt;.acf.bak</code>，想退回去直接用它覆盖即可。</p>
+    <p>下载量：相邻版本通常只补差量（几百 MB），跨大版本可能要几 GB。下载完成前进游戏，版本号不会变。</p>
+  </div>
+
+  <h3>换完版本，回设置点一下「刷新」</h3>
+  <p>「启动器设置 → 路径」里的<strong>游戏版本</strong>是缓存的，换完版本不会自己变。
+  点旁边的<strong>刷新</strong>重新读一次，模组列表的兼容性标签才是对的。</p>
+</section>
+
+<!-- ========== 11 ========== -->
 <section id="memory">
-  <h2><span class="n">14</span>内存管理</h2>
+  <h2><span class="n">15</span>内存管理</h2>
 
   <figure>
     <img src="img/08-内存管理.png" alt="内存管理">
@@ -895,7 +971,7 @@ footer{
 
 <!-- ========== 11 ========== -->
 <section id="diag">
-  <h2><span class="n">15</span>崩溃诊断</h2>
+  <h2><span class="n">16</span>崩溃诊断</h2>
 
   <p>游戏闪退、卡死、白屏、进不去、模组冲突时，用这里收集一份诊断包，发给帮你排查的人。</p>
 
@@ -948,9 +1024,9 @@ footer{
 
 <!-- ========== 12 ========== -->
 <section id="settings">
-  <h2><span class="n">16</span>启动器设置</h2>
+  <h2><span class="n">17</span>启动器设置</h2>
 
-  <p>点左下角「启动器设置」。这里分四块：</p>
+  <p>点左下角「启动器设置」。里面是这几块：</p>
 
   <figure>
     <img src="img/05-设置.png" alt="启动器设置">
@@ -996,11 +1072,22 @@ footer{
     <li><strong>创建桌面快捷方式</strong> —— 在桌面放一个带图标的快捷方式，省得每次翻文件夹</li>
     <li><strong>打开数据库目录 / 数据目录</strong> —— 直达文件位置</li>
   </ul>
+
+  <h3>版本自检（检查更新）</h3>
+  <p>点<strong>检查更新</strong>，程序直接拿内置的更新地址去比对，<strong>不用自己填任何地址</strong>：</p>
+  <ul>
+    <li><strong>有新版本</strong> —— 显示版本号、发布日期、更新说明，并给一个下载按钮，点了直接下安装包</li>
+    <li><strong>已是最新</strong> —— 直接提示，不会跳任何网页</li>
+  </ul>
+  <div class="box tip">
+    <p>「版本配置」和「通过 Steam 切换游戏版本」<strong>已经不在设置里</strong>了，挪到了左侧边栏的
+    <strong>「版本切换」</strong>页，操作说明见第 14 节。</p>
+  </div>
 </section>
 
 <!-- ========== 13 ========== -->
 <section id="faq">
-  <h2><span class="n">17</span>常见问题</h2>
+  <h2><span class="n">18</span>常见问题</h2>
 
   <h3>窗口没弹出来 / 一闪就没了</h3>
   <p>用压缩包里的 <code>启动器-调试.bat</code>（如果有）或直接在命令行跑 exe 看报错。常见原因是系统缺少 WebView2 运行时——Windows 10/11 一般自带，实在没有可以去微软官网装「WebView2 Runtime」。</p>
@@ -1060,6 +1147,22 @@ footer{
   <h3>能和朋友一起用吗</h3>
   <p>可以。整个文件夹压缩发给他就行，他电脑上只要有 CK3。模组配置用<strong>导出播放集</strong>分享，比发整个文件夹靠谱。</p>
 
+  <h3>切了 Steam 分支，进游戏还是旧版本</h3>
+  <p>按顺序排查，基本就这三种情况：</p>
+  <ol class="steps">
+    <li>看 Steam 的「下载」页 —— <strong>还没下完</strong>。下载完成之前进游戏，版本号是不会变的</li>
+    <li>任务管理器里有没有残留的 <code>ck3.exe</code>（内存很小、结束任务也杀不掉）—— 有就<strong>重启电脑</strong>清掉</li>
+    <li>确实下完了、显示的还是旧的 —— 去「启动器设置 → 路径」点一次<strong>刷新</strong>，重新读一遍版本号</li>
+  </ol>
+
+  <h3>顶栏看不到版本下拉</h3>
+  <p>只有当前游戏建了 <strong>2 套以上</strong>版本配置时才会出现，只有 1 套就自动隐藏。</p>
+  <p>另外它是<strong>按游戏分开</strong>的：切到群星只会显示群星自己的配置，不会残留 CK3 的版本号。</p>
+
+  <h3>切了版本配置，存档 / 模组没分开</h3>
+  <p>多半是没开 <code>-dataPath</code>。去「版本切换」页把「独立数据目录」开关打开，游戏才会去读你填的那个目录。</p>
+  <p>另外新目录默认是空的，得先把要用的存档和模组复制进去。详见第 14 节。</p>
+
   <h3>快捷键</h3>
   <table>
     <tr><td><kbd>Ctrl</kbd> + <kbd>F</kbd></td><td>模组管理页聚焦搜索框</td></tr>
@@ -1069,7 +1172,7 @@ footer{
 
 <!-- ========== 14 ========== -->
 <section id="safe">
-  <h2><span class="n">18</span>数据安全</h2>
+  <h2><span class="n">19</span>数据安全</h2>
 
   <p>每次写入游戏数据前，都会自动把原文件备份到程序目录下的 <code>backups/</code>：</p>
   <ul>
@@ -1117,8 +1220,13 @@ footer{
 </section>
 
 <footer>
-  人联启动器 v1.4<br>
+  人联启动器 v1.6<br>
   <span style="color:var(--gold)">反馈群：793826682　·　小黑盒：人联永不服输</span><br>
+  <br>
+  开源地址（源码全部公开，可自行审阅 / 编译）：<br>
+  <a href="https://gitee.com/xiaoyi2233/renlian-launcher" target="_blank" rel="noopener">Gitee · 主仓库（更新检查也走这里）</a><br>
+  <a href="https://github.com/xiaoyi201610/renlian-launcher" target="_blank" rel="noopener">GitHub · 镜像仓库</a><br>
+  <br>
   本工具为第三方自制，与 Paradox Interactive 无隶属关系。
 </footer>
 

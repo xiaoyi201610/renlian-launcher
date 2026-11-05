@@ -2,6 +2,13 @@
 
 Paradox 全家桶的第三方启动器，一份程序管十款游戏：十字军之王 II/III、群星、钢铁雄心 IV、维多利亚 3、欧陆风云 IV/V、帝皇：罗马、城市：天际线 1/2。比官方启动器轻，**重点是排序**；除此之外，还有三个真正省事的地方：拖进窗口就能装的 Mod、一键排查播放集冲突、五种界面语言。
 
+**开源地址（源码全部公开，可自行审阅 / 编译）**
+
+- **Gitee（主仓库，更新检查也走这里）**：https://gitee.com/xiaoyi2233/renlian-launcher
+- **GitHub（镜像仓库）**：https://github.com/xiaoyi201610/renlian-launcher
+
+**下载**：到 Gitee 仓库的 [Releases](https://gitee.com/xiaoyi2233/renlian-launcher/releases) 页取最新版压缩包，解压双击 `人联启动器.exe` 即可，无需安装 Python。
+
 ---
 
 ## 三个亮点
@@ -89,7 +96,7 @@ python -m PyInstaller build.spec --noconfirm --distpath dist --workpath build
 # 2. 组装绿色目录 + 压缩包
 python make_release.py
 
-# 3. 产物在 release/人联启动器_v1.5.zip
+# 3. 产物在 release/人联启动器_v<版本>.zip（版本号取 make_release.py 里的 VERSION）
 ```
 
 `build.spec` 里有两个关键点，改动时别删：
@@ -209,6 +216,7 @@ CK3Launcher/
 │  ├─ dlc_cn.py          DLC 中文名对照表（全游戏，离线内置）
 │  ├─ dlc_meta.py        DLC 商店元数据内置快照（名称 / 日期 / 封面）
 │  ├─ steamdlc.py        向 Steam 客户端查 DLC 授权
+│  ├─ steambeta.py       Steam 测试分支读写（appinfo.vdf 解析 + appmanifest BetaKey）
 │  ├─ achievements.py    Steam 成就解析 + 游戏 DDS 图标转 PNG
 │  ├─ diagnose.py        崩溃诊断信息收集
 │  └─ windlg.py          原生文件对话框（保存 / 打开）
@@ -218,6 +226,36 @@ CK3Launcher/
 ├─ dist/                 打包输出的 exe
 └─ release/              最终可分享的 zip 与绿色目录
 ```
+
+---
+
+## 1.6 新增：版本切换与文件独立
+
+「游戏本体版本」和「存档 / 模组」本来是两件不同的事，1.6 把它们分开管，侧边栏多了一个「版本切换」页。
+
+### ① 版本配置（多版本，各管各的数据）
+
+每个游戏都能建多套配置，每套拥有独立的**游戏本体目录 / 创意工坊目录 / 用户数据目录**，切一套就是整套存档、模组、设置一起换。
+
+- 新增时自动分配独立数据目录（默认目录的兄弟目录，如 `…\Crusader Kings III - 1.19`），不用自己想名字
+- 每条可设名称 / 版本号 / 数据目录，支持「浏览」改路径、「打开」直达资源管理器
+- 建到 2 套以上，顶栏出现**版本下拉**，一键切换；下拉按当前游戏独立，不会串到别的游戏
+- 要真正隔离必须开启 `-dataPath`（卡片里有一键开关，可开可关）；不开则各版本共用同一个默认目录
+
+### ② 通过 Steam 切换游戏本体版本
+
+直接读写 Steam 清单 `appmanifest_<AppID>.acf` 里的 `UserConfig.BetaKey` —— 与 Steam「属性 → 测试版」改的是**同一个字段**，不存在「启动器专用版本」。
+
+- 自动抓取当前游戏在 Steam 里的**全部分支**，默认公开版本置顶；CK3 / 群星 / 钢铁雄心 4 / 欧陆风云 4-5 / 维多利亚 3 / CK2 / 帝皇罗马 / 城市天际线等通用
+- 流程：选分支 → 切换 → 确认 → 启动器自动关闭 Steam → 写入分支 → 重启 Steam → Steam 自动下载
+- 切换前自动备份 `appmanifest_<AppID>.acf.bak`，可随时还原
+- 相邻版本通常只补差量（几百 MB），跨大版本可能几 GB；下载完成前进游戏版本号不会变
+
+> 切换前游戏必须完全退出。若任务管理器里残留杀不掉的僵尸 `ck3.exe`，只能**重启电脑**清掉，否则 Steam 会显示在下载、进度却不动。
+
+### ③ 启动器自带检查更新
+
+设置页「版本自检」点「检查更新」，直接用内置 Gitee 源比对，有新版就显示版本号 / 日期 / 说明并给出下载按钮，**不需要自己填更新地址**。
 
 ---
 
