@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 15                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 19                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 目录名（相对 gameRoot）
 D_MAA = os.path.join("common", "men_at_arms_types")
@@ -118,31 +118,31 @@ MOD_KEYS = ("damage", "toughness", "pursuit", "screen")
 
 # 常见修正键的中文名：游戏里没有单独本地化，这里补一份（只收高频的）
 MODIFIER_NAMES = {
-    "accolade_glory_gain_mult": "荣耀获取",
-    "knight_limit": "骑士数量上限",
-    "character_travel_speed_mult": "旅行速度",
-    "movement_speed": "行军速度",
-    "movement_speed_land_raiding": "陆上劫掠行军速度",
-    "men_at_arms_recruitment_cost": "兵士招募花费",
-    "knight_effectiveness_mult": "骑士战斗力",
-    "character_travel_safety_mult": "旅行安全",
-    "hard_casualty_modifier": "伤亡人数",
-    "cultural_acceptance_gain_mult": "文化接受度增长",
-    "diplomatic_range_mult": "外交范围",
-    "maa_toughness_mult": "兵士坚韧",
-    "maa_damage_mult": "兵士伤害",
-    "prowess_per_piety_level": "每级虔诚提供勇武",
-    "faith_conversion_piety_cost_mult": "改信花费",
-    "development_growth": "发展度成长",
-    "monthly_income_mult": "每月收入",
-    "dynasty_house_opinion": "家族好感",
+    "accolade_glory_gain_mult": ("荣耀获取","Glory gain"),
+    "knight_limit": ("骑士数量上限","Knight limit"),
+    "character_travel_speed_mult": ("旅行速度","Travel speed"),
+    "movement_speed": ("行军速度","Movement speed"),
+    "movement_speed_land_raiding": ("陆上劫掠行军速度","Land raiding movement speed"),
+    "men_at_arms_recruitment_cost": ("兵士招募花费","Men-at-arms recruitment cost"),
+    "knight_effectiveness_mult": ("骑士战斗力","Knight effectiveness"),
+    "character_travel_safety_mult": ("旅行安全","Travel safety"),
+    "hard_casualty_modifier": ("伤亡人数","Casualties"),
+    "cultural_acceptance_gain_mult": ("文化接受度增长","Cultural acceptance gain"),
+    "diplomatic_range_mult": ("外交范围","Diplomatic range"),
+    "maa_toughness_mult": ("兵士坚韧","Men-at-arms toughness"),
+    "maa_damage_mult": ("兵士伤害","Men-at-arms damage"),
+    "prowess_per_piety_level": ("每级虔诚提供勇武","Prowess per piety level"),
+    "faith_conversion_piety_cost_mult": ("改信花费","Faith conversion cost"),
+    "development_growth": ("发展度成长","Development growth"),
+    "monthly_income_mult": ("每月收入","Monthly income"),
+    "dynasty_house_opinion": ("家族好感","Dynasty house opinion"),
 }
 
 # `partners = { ... }` 里的键（婚姻类传统没有 parameters，效果全在这）
 PARTNER_NAMES = {
-    "number_of_spouses": "配偶数量上限",
-    "number_of_consorts": "伴侣数量上限",
-    "number_of_consorts_by_tier": "按头衔等级的伴侣上限",
+    "number_of_spouses": ("配偶数量上限","Max spouses"),
+    "number_of_consorts": ("伴侣数量上限","Max consorts"),
+    "number_of_consorts_by_tier": ("按头衔等级的伴侣上限","Consort limit by tier"),
 }
 
 # 传统分类：文件名主干 → 中文标签
@@ -293,10 +293,37 @@ _TRAIT_PAT = re.compile(r"GetTrait\(\s*'([A-Za-z0-9_\-]+)'\s*\)", re.I)
 _ICON_PAT = re.compile(r"\[[a-z0-9_]+_i\]")                # 图标占位 [prestige_i]
 _MARK_PAT = re.compile(r"#[A-Za-z0-9_!]*")                 # 排版标记 #P #! #bold
 _SV_PAT = re.compile(r"\[EmptyScope\.ScriptValue\(\s*'([A-Za-z0-9_]+)'\s*\)\s*\|0\]")
+_GETTER_PAT = re.compile(r"Get[A-Za-z]+\(\s*['\"]?([A-Za-z0-9_\-]+)['\"]?\s*\)")
+_VALUE_REF_PAT = re.compile(r"\$([A-Za-z0-9_]+)\|[^$]*\$")   # $OPINION|=V$ 这类数值占位
+
+# 数值占位：引擎现场算，这里给个可读名字而不是乱码
+VALUE_NAMES = {
+    "OPINION": ("好感度", "Opinion"),
+    "VALUE": ("数值", "Value"),
+    "MOD_COMBAT_COUNTER_RESISTANCE": ("克制抗性", "Counter Resistance"),
+}
+
+# 本地化里大量 `$任务键$` / `[概念|E]` 引用散落在这些前缀下，
+# 只按「本次用到的键」精确扫描会漏掉，扫描时按前缀一并收进来。
+WIDE_PREFIXES = ("game_concept_", "task_", "knight_culture_", "MAPMODE_", "trait_",
+                 "culture_parameter_", "doctrine_parameter_", "tenet_parameter_")
+
+# 引擎动态生成的文本（loc 里值本身是脚本调用），直接给可读名字
+DYNAMIC_NAMES = {
+    "knight_culture_player_plural_no_tooltip_lowercase": ("骑士", "Knights"),
+    "knight_culture_player_no_tooltip_lowercase": ("骑士", "Knight"),
+}
+
+# 游戏里没有独立本地化文案的机制参数，给一份简明的说明
+PARAMETER_NAMES = {
+    "faith_coherence_high": ("信仰凝聚力较高", "High faith coherence"),
+    "faith_coherence_low": ("信仰凝聚力较低", "Low faith coherence"),
+    "can_only_be_learned_in_person": ("只能当面学习（口述传承）", "Can only be learned in person"),
+}
 
 
-def _scan_loc(loc_dir: str, needed: set) -> dict:
-    """扫一遍本地化，只保留 needed 里的键（全量 30 万条，不能全留）。返回原始文本。"""
+def _scan_loc(loc_dir: str, needed: set, prefixes=()) -> dict:
+    """扫一遍本地化，只保留 needed 里的键（或匹配前缀的键）。返回原始文本。"""
     out = {}
     if not os.path.isdir(loc_dir):
         return out
@@ -308,8 +335,11 @@ def _scan_loc(loc_dir: str, needed: set) -> dict:
                 with open(os.path.join(root, n), encoding="utf-8-sig", errors="ignore") as f:
                     for line in f:
                         m = _LOC_PAT.match(line)
-                        if m and m.group(1) in needed and m.group(1) not in out:
-                            out[m.group(1)] = m.group(2)
+                        if not m:
+                            continue
+                        k = m.group(1)
+                        if k not in out and (k in needed or (prefixes and k.startswith(prefixes))):
+                            out[k] = m.group(2)
             except Exception:
                 continue
     return out
@@ -328,6 +358,15 @@ def _trait_name(key: str, raw: dict) -> str:
     for k in (key, "trait_" + key, "game_concept_" + key):
         v = raw.get(k)
         if v:
+            return v
+    return _title(key)
+
+
+def _getter_name(key: str, raw: dict) -> str:
+    """`[GetMaA('house_guard').GetName]` 这类：把括号里的键解成中文名。"""
+    for cand in (key, key + "_name", "trait_" + key, "game_concept_" + key):
+        v = raw.get(cand)
+        if v and not v.lstrip().startswith("["):
             return v
     return _title(key)
 
@@ -352,6 +391,9 @@ def _resolve(text: str, raw: dict, sv: dict | None = None, depth: int = 3) -> st
             tm = _TRAIT_PAT.search(s)
             if tm:
                 return _trait_name(tm.group(1), raw)
+            gm = _GETTER_PAT.search(s)
+            if gm:
+                return _getter_name(gm.group(1), raw)
             return ""          # 其他脚本函数（取对象名等）直接丢掉，别留孤立的 ?
         text = _FUNC_PAT.sub(frep, text)
         text = _TOK_PAT.sub(lambda m: _concept(m.group(1), raw), text)
@@ -365,17 +407,21 @@ def _ref_keys(text: str) -> set:
     ks.update(_TOK_PAT.findall(text))
     for t in _TRAIT_PAT.findall(text):
         ks.update((t, "trait_" + t, "game_concept_" + t))
+    for g in _GETTER_PAT.findall(text):
+        ks.update((g, g + "_name", "trait_" + g, "game_concept_" + g))
     ks.update("game_concept_" + k for k in list(ks))
     return ks
 
 
-def _clean(s: str) -> str:
+def _clean(s: str, zh: bool = True) -> str:
     """去掉排版标记、图标占位，压掉多余空白。"""
     s = s.replace("\\n", " ")
     s = _MARK_PAT.sub("", s)
     s = _ICON_PAT.sub("", s)
     s = re.sub(r"@[A-Za-z0-9_]+!?", "", s)   # @piety_icon! / @government_type_x! 这类内联标记
     s = re.sub(r"\[[^\[\]]{1,80}\]", "", s)   # 剩下的脚本路径引用，如 [ROOT.Faith.XXX]
+    s = _VALUE_REF_PAT.sub(
+        lambda m: (VALUE_NAMES.get(m.group(1)) or (_title(m.group(1)),) * 2)[0 if zh else 1], s)
     s = re.sub(r"[ \t]{2,}", " ", s)
     return s.strip()
 
@@ -385,9 +431,15 @@ def _title(key: str) -> str:
     return " ".join(w[:1].upper() + w[1:] for w in str(key or "").split("_") if w)
 
 
-def _finalize(raw: dict, sv: dict | None = None) -> dict:
+def _finalize(raw: dict, sv: dict | None = None, zh: bool = True) -> dict:
     """引用展开 + 清洗，得到可直接显示的译名表。"""
-    return {k: _clean(_resolve(v, raw, sv)) for k, v in raw.items()}
+    out = {k: _clean(_resolve(v, raw, sv), zh) for k, v in raw.items()}
+    # 兜底：还有漏网的 $key$，绝不能把美元符号带到界面上
+    for k, v in list(out.items()):
+        if "$" in v:
+            out[k] = _clean(_REF_PAT.sub(
+                lambda m: out.get(m.group(1)) or raw.get(m.group(1)) or _title(m.group(1)), v), zh)
+    return out
 
 
 def _pick(loc: dict, keys) -> str:
@@ -532,6 +584,16 @@ def _pillar(pkey: str, loc: dict) -> dict:
     }
 
 
+def _mn(mapping: dict, key: str, zh: bool = True):
+    """内置译名表取值：兼容纯字符串与 (中文, English) 两种写法。"""
+    v = mapping.get(key)
+    if not v:
+        return None
+    if isinstance(v, (tuple, list)):
+        return v[0] if zh else v[1]
+    return v
+
+
 def _fmt_num(v: str) -> str:
     """把修正值格式化成 +10 / -5 / +25% 这样。"""
     try:
@@ -573,7 +635,7 @@ def _collect_script_values(game_root: str) -> dict:
     return out
 
 
-def _trad_effects(body: str, loc: dict) -> list:
+def _trad_effects(body: str, loc: dict, zh: bool = True) -> list:
     """传统效果：parameters 对应的官方说明 + 有译名的修正值 + 婚姻类 partners。"""
     eff = []
     pb = _sub(body, "parameters")
@@ -586,7 +648,7 @@ def _trad_effects(body: str, loc: dict) -> list:
     partners = _sub(body, "partners")
     if partners:
         for k, v in _pairs(partners).items():
-            nm = PARTNER_NAMES.get(k) or loc.get(k)
+            nm = _mn(PARTNER_NAMES, k, zh) or loc.get(k)
             if nm and re.fullmatch(r"-?\d+(?:\.\d+)?", v):
                 eff.append("%s %s" % (nm, v))
     for block in ("character_modifier", "culture_modifier"):
@@ -596,7 +658,7 @@ def _trad_effects(body: str, loc: dict) -> list:
         for k, v in _pairs(mb).items():
             if k.startswith("ai_"):        # AI 行为参数，对玩家没意义
                 continue
-            nm = loc.get(k) or MODIFIER_NAMES.get(k)
+            nm = loc.get(k) or _mn(MODIFIER_NAMES, k, zh)
             if nm:
                 eff.append("%s %s" % (nm, _fmt_num(v)))
     # 去重保序
@@ -653,7 +715,7 @@ def _trad_entry(key: str, loc: dict, trad_map: dict, dlc: bool, requires: str) -
     }
 
 
-def _collect_traditions(game_root: str, loc: dict) -> tuple:
+def _collect_traditions(game_root: str, loc: dict, zh: bool = True) -> tuple:
     """返回 (明细列表, key→简要 映射)。分类取自文件名。"""
     items, mapping = [], {}
     for f in sorted(glob.glob(os.path.join(game_root, D_TRAD, "*.txt"))):
@@ -669,7 +731,7 @@ def _collect_traditions(game_root: str, loc: dict) -> tuple:
                 "key": key,
                 "name": loc.get(key + "_name") or loc.get(key) or key,
                 "desc": loc.get(key + "_desc") or "",
-                "effects": _trad_effects(body, loc),
+                "effects": _trad_effects(body, loc, zh),
                 "cat": cat,
             }
             items.append(it)
@@ -681,10 +743,11 @@ def _collect_traditions(game_root: str, loc: dict) -> tuple:
 
 # ---------------------------------------------------------------- 扩展百科（通用条目）
 
-def _generic_effects(body: str, loc: dict, prefixes=()) -> list:
+def _generic_effects(body: str, loc: dict, prefixes=(), zh=True) -> list:
     """从 parameters / special_parameters / 修正块里抽效果文案。
 
     `parameters` 有两种写法：裸标识符列表 或 `k = v`，都要能读。
+    革新还有 `unlock_law` / `custom`，教义有没本地化的机制参数，都要补上。
     """
     eff = []
     for blk in ("parameters", "special_parameters"):
@@ -704,17 +767,30 @@ def _generic_effects(body: str, loc: dict, prefixes=()) -> list:
             if txt:
                 eff.append(txt)
             else:
-                v = pairs.get(p)
-                if v and re.fullmatch(r"-?\d+(?:\.\d+)?", v):
-                    nm = PARTNER_NAMES.get(p) or MODIFIER_NAMES.get(p) or loc.get(p)
-                    if nm:
-                        eff.append("%s %s" % (nm, v))
+                pn = PARAMETER_NAMES.get(p)
+                if pn:
+                    eff.append(pn[0] if zh else pn[1])
+                else:
+                    v = pairs.get(p)
+                    if v and re.fullmatch(r"-?\d+(?:\.\d+)?", v):
+                        nm = _mn(PARTNER_NAMES, p, zh) or _mn(MODIFIER_NAMES, p, zh) or loc.get(p)
+                        if nm:
+                            eff.append("%s %s" % (nm, v))
+    # 革新解锁的法律 / 自定义效果
+    for law in re.findall(r"^\tunlock_law\s*=\s*([a-z_0-9]+)", body, re.M):
+        nm = loc.get(law) or loc.get(law + "_name")
+        if nm:
+            eff.append(("解锁：" if zh else "Unlocks: ") + nm)
+    for c in re.findall(r"^\tcustom\s*=\s*([a-z_0-9]+)", body, re.M):
+        t = loc.get("culture_parameter_" + c) or loc.get(c)
+        if t:
+            eff.append(t)
     for blk in ("character_modifier", "personal_tenet_modifier", "culture_modifier"):
         mb = _sub(body, blk)
         if not mb:
             continue
         for k, v in _pairs(mb).items():
-            nm = loc.get(k) or MODIFIER_NAMES.get(k)
+            nm = loc.get(k) or _mn(MODIFIER_NAMES, k, zh)
             if nm:
                 eff.append("%s %s" % (nm, _fmt_num(v)))
     seen, out = set(), []
@@ -755,7 +831,7 @@ def _collect_religions(game_root: str, loc: dict, doc_names: dict) -> list:
     return out
 
 
-def _collect_tenets(game_root: str, loc: dict) -> list:
+def _collect_tenets(game_root: str, loc: dict, zh=True) -> list:
     out = []
     for f in sorted(glob.glob(os.path.join(game_root, D_TENET, "*.txt"))):
         for key, body in _top_blocks(_read(f)):
@@ -766,13 +842,13 @@ def _collect_tenets(game_root: str, loc: dict) -> list:
                 loc.get(key + "_desc") or "",
                 "dlc" if dlc else "base", cat,
                 effects=_generic_effects(body, loc,
-                                         ("doctrine_parameter_", "culture_parameter_", "tenet_parameter_")),
+                                         ("doctrine_parameter_", "culture_parameter_", "tenet_parameter_"), zh),
             ))
     out.sort(key=lambda x: x["name"])
     return out
 
 
-def _collect_doctrines(game_root: str, loc: dict) -> list:
+def _collect_doctrines(game_root: str, loc: dict, zh=True) -> list:
     out = []
     for f in sorted(glob.glob(os.path.join(game_root, D_DOCTRINE, "*.txt"))):
         for key, body in _top_blocks(_read(f)):
@@ -782,13 +858,13 @@ def _collect_doctrines(game_root: str, loc: dict) -> list:
                 key, loc.get(key + "_name") or loc.get(key) or _title(key),
                 loc.get(key + "_desc") or "",
                 g, gname,
-                effects=_generic_effects(body, loc, ("doctrine_parameter_", "culture_parameter_")),
+                effects=_generic_effects(body, loc, ("doctrine_parameter_", "culture_parameter_"), zh),
             ))
     out.sort(key=lambda x: (x["cat"], x["name"]))
     return out
 
 
-def _collect_innovations(game_root: str, loc: dict) -> list:
+def _collect_innovations(game_root: str, loc: dict, zh=True) -> list:
     out = []
     for f in sorted(glob.glob(os.path.join(game_root, D_INNOV, "*.txt"))):
         for key, body in _top_blocks(_read(f)):
@@ -804,7 +880,7 @@ def _collect_innovations(game_root: str, loc: dict) -> list:
                 key, loc.get(key) or key, loc.get(key + "_desc") or "",
                 era, loc.get(era) or era or "其他",
                 attrs=attrs,
-                effects=_generic_effects(body, loc, ("culture_parameter_",)),
+                effects=_generic_effects(body, loc, ("culture_parameter_",), zh),
             ))
     out.sort(key=lambda x: (x["cat"], x["name"]))
     return out
@@ -961,13 +1037,17 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
                             needed.update((p, "culture_parameter_" + p,
                                            "doctrine_parameter_" + p,
                                            "tenet_parameter_" + p))
+                    # 革新解锁的法律 / 自定义效果
+                    for fld in ("unlock_law", "custom"):
+                        for v in re.findall(r"^\t" + fld + r"\s*=\s*([a-z_0-9]+)", body, re.M):
+                            needed.update((v, v + "_name", "culture_parameter_" + v))
                     # 宗教引用的教义名
                     for dk in re.findall(r"^\tdoctrine\s*=\s*([a-z_0-9]+)", body, re.M):
                         needed.update((dk, dk + "_name"))
 
-        raw = _scan_loc(loc_dir, needed)
+        raw = _scan_loc(loc_dir, needed, WIDE_PREFIXES)
 
-        # 引用展开：译名/效果里会引用 `$键$`、`[概念|E]`、`[GetTrait('x')]`，
+        # 引用展开：译名/效果里会引用 `$键$`、`[概念|E]`、`[GetMaA('x')]`，
         # 把这些被引用的键也补扫回来（做两轮，够覆盖二级引用）
         for _round in range(2):
             refs = set()
@@ -976,20 +1056,24 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
             refs -= set(raw.keys())
             if not refs:
                 break
-            for k, v in _scan_loc(loc_dir, refs).items():
+            for k, v in _scan_loc(loc_dir, refs, WIDE_PREFIXES).items():
                 raw.setdefault(k, v)
+        # 引擎动态文本：loc 里的值是脚本调用，直接覆盖成可读名字
+        zh = (loc_lang == "simp_chinese")
+        for k, pair in DYNAMIC_NAMES.items():
+            raw[k] = pair[0] if zh else pair[1]
         sv = _collect_script_values(game_root)
-        loc = _finalize(raw, sv)
+        loc = _finalize(raw, sv, zh)
 
         # 2) 正式抽取
-        traditions, trad_map = _collect_traditions(game_root, loc)
+        traditions, trad_map = _collect_traditions(game_root, loc, zh)
         maa = _collect_maa(game_root, loc, loc_lang)
         cultures = _collect_cultures(game_root, loc, trad_map)
-        doctrines = _collect_doctrines(game_root, loc)
+        doctrines = _collect_doctrines(game_root, loc, zh)
         doc_names = {d["key"]: d["name"] for d in doctrines}
         religions = _collect_religions(game_root, loc, doc_names)
-        tenets = _collect_tenets(game_root, loc)
-        innovations = _collect_innovations(game_root, loc)
+        tenets = _collect_tenets(game_root, loc, zh)
+        innovations = _collect_innovations(game_root, loc, zh)
 
         # 3) 克制关系：闭环 + 每个兵种的「被谁克制」
         tname = {}
