@@ -981,14 +981,16 @@ footer{
 
   <h3>文化和传统怎么读</h3>
   <ul>
-    <li><strong>文化</strong>：展开后是「文化精神 / 文化传承 / 语言」三块，下面用<strong>表格</strong>列出这个文化的全部传统（名称 + 说明），
+    <li><strong>文化</strong>：展开后是「文化精神 / 文化传承 / 语言」三块，下面用<strong>表格</strong>按
+      <strong>传统 / 说明 / 效果</strong>三列列出这个文化的全部传统，效果列直接给出具体数值。
       带 <strong>DLC</strong> 标记的是需要对应 DLC 才有的传统（例如「汉」文化的士大夫、兵法全是如此）</li>
     <li><strong>传统</strong>：展开先给<strong>实际效果</strong>（如「授予家族成员头衔时获得威望」），再给简介文字，
       最后列出「哪些文化拥有这项传统」</li>
   </ul>
   <div class="box tip">
-    <p>传统效果直接取自游戏脚本里的 parameters 与修正值，偶有一两条含引擎实时数值（如成功率随状态浮动），
-    会显示成 <code>+?%</code>，具体以游戏内为准。</p>
+    <p>效果取自游戏脚本里的 <code>parameters</code>、修正值和 <code>script_values</code> 常量，
+    百分比、发展度这些都是<strong>游戏里的真实数值</strong>，不是占位符；
+    婚姻类传统（多配偶制、侧室）的效果在 <code>partners</code> 块里，也一并列出来了。</p>
   </div>
 
   <h3>「重建索引」什么时候点</h3>

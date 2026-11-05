@@ -1193,3 +1193,10 @@ body{
 
 .wk-eff{margin:0;padding-left:16px}
 .wk-eff li{font-size:12.5px;color:var(--fg-2);line-height:1.85;margin-bottom:3px}
+
+/* 文化详情：三列表格（传统 / 说明 / 效果） */
+.wk-trad-table th:nth-child(1){width:120px}
+.wk-trad-table th:nth-child(2){width:32%}
+.wk-trad-table td:nth-child(3){color:var(--fg-2)}
+.wk-eff.tight{padding-left:14px;margin:0}
+.wk-eff.tight li{font-size:11.5px;line-height:1.7;margin-bottom:2px;color:var(--dim)}

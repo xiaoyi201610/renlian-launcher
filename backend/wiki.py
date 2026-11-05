@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 6                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 11                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 目录名（相对 gameRoot）
 D_MAA = os.path.join("common", "men_at_arms_types")
@@ -37,6 +37,7 @@ D_CULT = os.path.join("common", "culture", "cultures")
 D_TRAD = os.path.join("common", "culture", "traditions")
 D_PILLAR = os.path.join("common", "culture", "pillars")
 D_LOC = "localization"
+D_SV = os.path.join("common", "script_values")   # 脚本值：效果里 ScriptValue('x') 的真实数字
 
 # 目前只有 CK3 有对应脚本结构；其他游戏返回 supported=false
 SUPPORTED_GAMES = {"ck3"}
@@ -120,6 +121,13 @@ MODIFIER_NAMES = {
     "development_growth": "发展度成长",
     "monthly_income_mult": "每月收入",
     "dynasty_house_opinion": "家族好感",
+}
+
+# `partners = { ... }` 里的键（婚姻类传统没有 parameters，效果全在这）
+PARTNER_NAMES = {
+    "number_of_spouses": "配偶数量上限",
+    "number_of_consorts": "伴侣数量上限",
+    "number_of_consorts_by_tier": "按头衔等级的伴侣上限",
 }
 
 # 传统分类：文件名主干 → 中文标签
@@ -269,6 +277,7 @@ _FUNC_PAT = re.compile(r"\[[^\[\]]*\([^\[\]]*\)[^\[\]]*\]")  # [GetTrait('x').Ge
 _TRAIT_PAT = re.compile(r"GetTrait\(\s*'([A-Za-z0-9_\-]+)'\s*\)", re.I)
 _ICON_PAT = re.compile(r"\[[a-z0-9_]+_i\]")                # 图标占位 [prestige_i]
 _MARK_PAT = re.compile(r"#[A-Za-z0-9_!]*")                 # 排版标记 #P #! #bold
+_SV_PAT = re.compile(r"\[EmptyScope\.ScriptValue\(\s*'([A-Za-z0-9_]+)'\s*\)\s*\|0\]")
 
 
 def _scan_loc(loc_dir: str, needed: set) -> dict:
@@ -308,26 +317,27 @@ def _trait_name(key: str, raw: dict) -> str:
     return _title(key)
 
 
-def _resolve(text: str, raw: dict, depth: int = 3) -> str:
-    """展开 $变量$、[概念|E]、[GetTrait('x')...]，丢掉算不出来的脚本函数。"""
+def _resolve(text: str, raw: dict, sv: dict | None = None, depth: int = 3) -> str:
+    """展开 $变量$、[概念|E]、[GetTrait('x')...] 与脚本值，丢掉算不出来的函数。"""
     if not text:
         return text
+    sv = sv or {}
     if "$" in text:
         def rep(m):
             k = m.group(1)
             if k in raw and depth > 0:
-                return _resolve(raw[k], raw, depth - 1)
+                return _resolve(raw[k], raw, sv, depth - 1)
             return k
         text = _REF_PAT.sub(rep, text)
+    # 脚本值：[EmptyScope.ScriptValue('x')|0] → 脚本里定义的真实数字
+    text = _SV_PAT.sub(lambda m: str(sv.get(m.group(1), "?")), text)
     if "[" in text:
         def frep(m):
             s = m.group(0)
             tm = _TRAIT_PAT.search(s)
             if tm:
                 return _trait_name(tm.group(1), raw)
-            if "ScriptValue" in s:
-                return "?"          # 数值要靠引擎算，这里给占位
-            return ""
+            return ""          # 其他脚本函数（取对象名等）直接丢掉，别留孤立的 ?
         text = _FUNC_PAT.sub(frep, text)
         text = _TOK_PAT.sub(lambda m: _concept(m.group(1), raw), text)
     return text
@@ -358,9 +368,9 @@ def _title(key: str) -> str:
     return " ".join(w[:1].upper() + w[1:] for w in str(key or "").split("_") if w)
 
 
-def _finalize(raw: dict) -> dict:
+def _finalize(raw: dict, sv: dict | None = None) -> dict:
     """引用展开 + 清洗，得到可直接显示的译名表。"""
-    return {k: _clean(_resolve(v, raw)) for k, v in raw.items()}
+    return {k: _clean(_resolve(v, raw, sv)) for k, v in raw.items()}
 
 
 def _pick(loc: dict, keys) -> str:
@@ -518,8 +528,36 @@ def _fmt_num(v: str) -> str:
     return "%+g" % f
 
 
+def _collect_script_values(game_root: str) -> dict:
+    """读 `common/script_values/*.txt` 的顶层常量，用来还原效果里的 ScriptValue('x')。"""
+    out, refs = {}, {}
+    for f in glob.glob(os.path.join(game_root, D_SV, "*.txt")):
+        text = _read(f)
+        for m in re.finditer(r"^([A-Za-z0-9_]+)\s*=\s*(-?\d+(?:\.\d+)?)\s*$", text, re.M):
+            out[m.group(1)] = m.group(2)
+        # 顶层别名：`xxx_gain = minor_development_progress_gain`
+        for m in re.finditer(r"^([A-Za-z0-9_]+)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*$", text, re.M):
+            if m.group(2) not in ("yes", "no", "true", "false"):
+                refs[m.group(1)] = m.group(2)
+        for k, b in _top_blocks(text):
+            v = _val(b, "value")
+            if not v:
+                continue
+            if re.fullmatch(r"-?\d+(?:\.\d+)?", v):
+                out.setdefault(k, v)
+            elif re.fullmatch(r"[A-Za-z0-9_]+", v):
+                refs[k] = v          # 别名：`xxx_tt = { value = xxx }`
+    # 别名链解析（最多 3 层），让 `_tt` 这类包装键也能取到数字
+    for _ in range(3):
+        for k, v in list(refs.items()):
+            if v in out:
+                out.setdefault(k, out[v])
+                refs.pop(k, None)
+    return out
+
+
 def _trad_effects(body: str, loc: dict) -> list:
-    """传统效果：parameters 对应的官方说明 + 有译名的修正值。"""
+    """传统效果：parameters 对应的官方说明 + 有译名的修正值 + 婚姻类 partners。"""
     eff = []
     pb = _sub(body, "parameters")
     if pb:
@@ -527,6 +565,13 @@ def _trad_effects(body: str, loc: dict) -> list:
             t = loc.get("culture_parameter_" + p)
             if t:
                 eff.append(t)
+    # 婚姻类传统（多配偶制 / 纳妾制）没有 parameters，效果写在 partners 里
+    partners = _sub(body, "partners")
+    if partners:
+        for k, v in _pairs(partners).items():
+            nm = PARTNER_NAMES.get(k) or loc.get(k)
+            if nm and re.fullmatch(r"-?\d+(?:\.\d+)?", v):
+                eff.append("%s %s" % (nm, v))
     for block in ("character_modifier", "culture_modifier"):
         mb = _sub(body, block)
         if not mb:
@@ -585,6 +630,7 @@ def _trad_entry(key: str, loc: dict, trad_map: dict, dlc: bool, requires: str) -
         "key": key,
         "name": base.get("name") or loc.get(key + "_name") or loc.get(key) or key,
         "desc": base.get("desc") or loc.get(key + "_desc") or "",
+        "effects": base.get("effects") or [],
         "dlc": dlc,
         "requires": requires,
     }
@@ -610,7 +656,8 @@ def _collect_traditions(game_root: str, loc: dict) -> tuple:
                 "cat": cat,
             }
             items.append(it)
-            mapping[key] = {"key": key, "name": it["name"], "desc": it["desc"]}
+            mapping[key] = {"key": key, "name": it["name"], "desc": it["desc"],
+                            "effects": it["effects"]}
     items.sort(key=lambda x: (x["cat"], x["name"]))
     return items, mapping
 
@@ -657,7 +704,7 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
                 "error": "没找到游戏本体目录（common/men_at_arms_types），请在设置里确认游戏根目录"}
 
     loc_lang = LANG_MAP.get((ui_lang or "zh").lower(), "simp_chinese")
-    dirs = [os.path.join(game_root, d) for d in (D_MAA, D_CULT, D_TRAD)]
+    dirs = [os.path.join(game_root, d) for d in (D_MAA, D_CULT, D_TRAD, D_SV)]
     loc_dir = os.path.join(game_root, D_LOC, loc_lang)
     dirs.append(loc_dir)
     sig = _sig(dirs)
@@ -745,7 +792,8 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
                 break
             for k, v in _scan_loc(loc_dir, refs).items():
                 raw.setdefault(k, v)
-        loc = _finalize(raw)
+        sv = _collect_script_values(game_root)
+        loc = _finalize(raw, sv)
 
         # 2) 正式抽取
         traditions, trad_map = _collect_traditions(game_root, loc)

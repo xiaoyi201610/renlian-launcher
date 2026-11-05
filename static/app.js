@@ -671,10 +671,13 @@ function wikiRow(it) {
         </div>
         ${trs.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.traditionsOf'))} (${trs.length})</div>
           <table class="wk-trad-table">
-            <tr><th>${esc(T('wiki.tradName'))}</th><th>${esc(T('wiki.tradDesc'))}</th></tr>
+            <tr><th>${esc(T('wiki.tradName'))}</th><th>${esc(T('wiki.tradDesc'))}</th><th>${esc(T('wiki.effects'))}</th></tr>
             ${trs.map(t => `<tr>
               <td><b>${esc(t.name)}</b>${t.dlc ? ` <em class="wk-dlc">${esc(T('wiki.dlcTag'))}</em>` : ''}</td>
-              <td>${esc(t.desc || '—')}</td></tr>`).join('')}
+              <td>${esc(t.desc || '—')}</td>
+              <td>${(t.effects || []).length
+                ? `<ul class="wk-eff tight">${t.effects.map(e => `<li>${esc(e)}</li>`).join('')}</ul>`
+                : '<span class="wk-pd">—</span>'}</td></tr>`).join('')}
           </table>
         </div>` : ''}
         ${(it.parents || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.parents'))}</div>
