@@ -1,7 +1,7 @@
 {
-  "version": "1.6.1",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.1/renlian-launcher_v1.6.1.zip",
-  "notes": "新增「通过 Steam 切换游戏版本」：直接读写 Steam 的 beta 分支（BetaKey），可一键切到任意历史版本（如 1.19.0 / 1.20.0 / open_beta 等）。关闭 Steam 点切换后，启动 Steam 会自动下载对应版本——这才是真正改变游戏本体版本的方式（需游戏为 Steam 安装）。",
+  "version": "1.6.2",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.2/renlian-launcher_v1.6.2.zip",
+  "notes": "「通过 Steam 切换游戏版本」全面支持所有游戏：CK3、群星、钢铁雄心4、欧陆风云4/5、维多利亚3、CK2、Imperator、城市天际线等，切到哪个游戏就自动抓取该游戏 Steam 里的全部分支（历史版本/测试分支一个不落），选分支→关闭 Steam→切换→启动 Steam 自动下载对应版本。",
   "date": "2026-11-05",
   "size": "25.2MB"
 }

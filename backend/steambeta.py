@@ -151,10 +151,40 @@ def parse_branches(appid: str | int) -> list[dict]:
     def S(i: int) -> str | None:
         return strings[i] if 0 <= i < len(strings) else None
 
-    # 精确定位该 appid 的数据块（appid u32 + size u32 + data）
+    def _parse_block(block: bytes) -> list[dict]:
+        out, seen = [], set()
+        patb = b"\x02\xe9\x01\x00\x00"        # type=int32, key="buildid"
+        k = 0
+        while True:
+            m = block.find(patb, k)
+            if m < 0:
+                break
+            k = m + 1
+            if m < 6 or block[m - 6:m - 4] != b"\x08\x00":
+                continue
+            keyidx = struct.unpack_from("<I", block, m - 4)[0]
+            key = S(keyidx)
+            if not key or key in ("buildid", "description", "timeupdated"):
+                continue
+            bid = struct.unpack_from("<I", block, m + 5)[0] if m + 9 <= len(block) else 0
+            dpos = block.find(b"\x01\xec\x01\x00\x00", m + 9)
+            desc = ""
+            if dpos >= 0:
+                ds = dpos + 5
+                de = block.find(b"\x00", ds)
+                desc = block[ds:de].decode("latin-1").strip()
+            sig = (key, desc)
+            if sig in seen:
+                continue
+            seen.add(sig)
+            out.append({"key": key, "desc": desc, "buildid": bid})
+        return out
+
+    # appid 的字节在文件里可能多次出现，逐个候选块解析，取「分支最多」的那块
+    # —— 真正的 app 数据块分支最全，误命中的块通常 0~1 个，借此彻底避免串块。
     pat = struct.pack("<I", appid)
     pos = 0
-    block = None
+    best: list[dict] = []
     while True:
         j = data.find(pat, pos)
         if j < 0:
@@ -163,42 +193,14 @@ def parse_branches(appid: str | int) -> list[dict]:
         if j + 8 > len(data):
             continue
         size = struct.unpack_from("<I", data, j + 4)[0]
-        bs, be = j + 8, j + 8 + size
-        if 0 < size < 8_000_000 and be <= len(data):
-            # 用「该 app 块里是否含 appid 的 name 字段」不必要；这里以块大小合理 + 分支结构判定
-            block = data[bs:be]
-            break
-    if block is None:
-        return []
-
-    branches = []
-    seen = set()
-    patb = b"\x02\xe9\x01\x00\x00"        # type=int32, key="buildid"
-    k = 0
-    while True:
-        m = block.find(patb, k)
-        if m < 0:
-            break
-        k = m + 1
-        if m < 6 or block[m - 6:m - 4] != b"\x08\x00":
+        if not (0 < size < 8_000_000) or j + 8 + size > len(data):
             continue
-        keyidx = struct.unpack_from("<I", block, m - 4)[0]
-        key = S(keyidx)
-        if not key or key in ("buildid", "description", "timeupdated"):
-            continue
-        bid = struct.unpack_from("<I", block, m + 5)[0] if m + 9 <= len(block) else 0
-        dpos = block.find(b"\x01\xec\x01\x00\x00", m + 9)
-        desc = ""
-        if dpos >= 0:
-            ds = dpos + 5
-            de = block.find(b"\x00", ds)
-            desc = block[ds:de].decode("latin-1").strip()
-        sig = (key, desc)
-        if sig in seen:
-            continue
-        seen.add(sig)
-        branches.append({"key": key, "desc": desc, "buildid": bid})
-    return branches
+        br = _parse_block(data[j + 8:j + 8 + size])
+        if len(br) > len(best):
+            best = br
+            if len(best) >= 20:       # 已足够像真实块，提前结束
+                break
+    return best
 
 
 def branches_or_fallback(appid: str | int) -> list[dict]:
