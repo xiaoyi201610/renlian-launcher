@@ -1,7 +1,7 @@
 {
-  "version": "1.6.5",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.5/renlian-launcher_v1.6.5.zip",
-  "notes": "版本切换补全「默认公开版本(public)」：此前 appinfo 里 public 不带分支描述而被漏掉，现已单独补上并置顶（所有游戏通用）。",
+  "version": "1.6.6",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.6/renlian-launcher_v1.6.6.zip",
+  "notes": "修复切换/删除用浏览器原生 confirm 在界面里被屏蔽、点了没反应也看不到提示的问题——改用内置确认弹窗。切换流程：选分支→点切换→弹「确认并重启 Steam」→确定后 Steam 自动关闭并重启。切换中显示提示并防重复点击。-dataPath 支持开/关（可取消独立数据目录）。文案改为「启动器只是快速入口，Steam 内切换同样有效」。",
   "date": "2026-11-05",
   "size": "25.2MB"
 }

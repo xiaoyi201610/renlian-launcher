@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.6.5';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.6.6';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -3277,7 +3277,7 @@ async function renderSettings() {
       </div>
       <div class="hint" id="verDataInfo" style="margin-top:10px;line-height:1.7"></div>
       <div class="bar" style="margin-top:8px">
-        <button class="btn sm" id="verDpOn" style="display:none">${esc(T('settings.verDpBtn'))}</button>
+        <button class="btn sm" id="verDpOn">${esc(T('settings.verDpBtn'))}</button>
       </div>
     </div>
 
@@ -3405,7 +3405,7 @@ async function renderSettings() {
     $$('#verProfileList [data-pfact]').forEach(b => b.onclick = async () => {
       const id = b.dataset.id, act = b.dataset.pfact;
       if (act === 'del') {
-        if (!confirm(T('settings.confirmDelProfile'))) return;
+        if (!(await ui.confirm(T('settings.confirmDelProfile'), { danger: true }))) return;
         const r = await post('/api/profile/delete', { id });
         if (r.ok) { S.state = r.state; afterProfileChange(); toast(T('common.deleted'), 'ok'); }
         else toast(r.error || T('common.failed'), 'err');
@@ -3442,14 +3442,16 @@ async function renderSettings() {
   (() => {
     const info = $('#verDataInfo'), btn = $('#verDpOn');
     if (!info) return;
-    info.textContent = c.useDataPathArg ? T('settings.verDataOn') : T('settings.verDataOff');
+    const on = !!c.useDataPathArg;
+    info.textContent = on ? T('settings.verDataOn') : T('settings.verDataOff');
     if (btn) {
-      btn.style.display = c.useDataPathArg ? 'none' : '';
+      btn.textContent = on ? T('settings.verDpOffBtn') : T('settings.verDpBtn');
+      btn.className = on ? 'btn sm ghost' : 'btn sm';
       btn.onclick = async () => {
         btn.disabled = true;
-        await post('/api/config', { useDataPathArg: true });
+        await post('/api/config', { useDataPathArg: !on });
         await refreshState();
-        toast(T('settings.verDataEnabled'), 'ok');
+        toast(on ? T('settings.verDataDisabled') : T('settings.verDataEnabled'), 'ok');
         render();
       };
     }
@@ -3486,7 +3488,8 @@ async function renderSettings() {
       if (steamBusy) return;                       // 防止重复点击
       const key = steamSel.value;
       if (!key) return;
-      if (!confirm(T('settings.steamSwitchConfirm', { v: key }))) return;
+      if (!(await ui.confirm(T('settings.steamSwitchConfirm', { v: key }),
+            { title: T('settings.steamSwitchTitle'), okText: T('settings.steamRestartOk') }))) return;
       steamBusy = true;
       const sw = $('#steamSwitch'), hint = $('#steamHint'), old = sw.textContent;
       sw.disabled = true; sw.textContent = '…';
