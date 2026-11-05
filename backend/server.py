@@ -1355,6 +1355,38 @@ class Handler(BaseHTTPRequestHandler):
                 cfg["games"] = games
                 core.save_config(cfg)
                 self._json({"ok": True, "state": api_state()}); return
+            if p == "/api/profile/switch":
+                # 切换当前游戏的激活版本配置
+                pid = body.get("id") or ""
+                code = CTX.game
+                r = core.switch_profile(code, pid)
+                if not r.get("ok"):
+                    self._json(r); return
+                CTX.reload_cfg(); CTX.mods(force=True)
+                self._json({"ok": True, "state": api_state()}); return
+            if p == "/api/profile/add":
+                code = CTX.game
+                r = core.add_profile(code, body)
+                if not r.get("ok"):
+                    self._json(r); return
+                CTX.reload_cfg(); CTX.mods(force=True)
+                self._json({"ok": True, "state": api_state()}); return
+            if p == "/api/profile/update":
+                code = CTX.game
+                pid = body.get("id") or ""
+                r = core.update_profile(code, pid, body)
+                if not r.get("ok"):
+                    self._json(r); return
+                CTX.reload_cfg(); CTX.mods(force=True)
+                self._json({"ok": True, "state": api_state()}); return
+            if p == "/api/profile/delete":
+                code = CTX.game
+                pid = body.get("id") or ""
+                r = core.delete_profile(code, pid)
+                if not r.get("ok"):
+                    self._json(r); return
+                CTX.reload_cfg(); CTX.mods(force=True)
+                self._json({"ok": True, "state": api_state()}); return
             if p == "/api/pick-dir":
                 self._json({"ok": True, "path": pick_directory(body.get("initial") or "")}); return
             if p == "/api/playset/save-as":

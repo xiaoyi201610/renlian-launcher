@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.5.3';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.6.0';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -320,6 +320,41 @@ function paintTop() {
   const badge = $('#psBadge');
   badge.textContent = act ? T('top.enabledBadge', { n: act.enabled }) : T('top.notActive');
   badge.className = 'ps-badge' + (act ? '' : ' off');
+
+  // 版本配置快速切换（每个游戏可有多个版本配置，切换即换整套模组/存档/设置）
+  const vsel = $('#verSel');
+  const vquick = $('#verQuick');
+  const vprofiles = (st.config && st.config.profiles) || [];
+  if (vsel && vquick) {
+    if (vprofiles.length > 1) {
+      vquick.hidden = false;
+      vsel.innerHTML = vprofiles.map(p =>
+        `<option value="${esc(p.id)}"${p.active ? ' selected' : ''}>${esc(p.name)}${p.gameVersion ? ' (' + esc(p.gameVersion) + ')' : ''}</option>`
+      ).join('');
+      vsel.onchange = async () => {
+        const id = vsel.value;
+        saveState(T('top.switchingVersion'), true);
+        try {
+          const r = await post('/api/profile/switch', { id });
+          if (r.ok) {
+            S.state = r.state;
+            S.mods = []; S.modByKey = new Map(); S.play = []; S.collections = []; S.colFilter = '';
+            await reloadGameData();
+            paintTop(); render();
+            toast(T('top.versionSwitched'), 'ok');
+          } else {
+            toast(r.error || T('common.failed'), 'err');
+          }
+        } catch (e) {
+          toast('切换失败：' + e.message, 'err');
+        }
+        saveState('', true);
+      };
+    } else {
+      vquick.hidden = true;
+    }
+  }
+
   if (st.dbLocked) toast(T('top.dbLocked'), 'err');
 }
 
@@ -3156,6 +3191,16 @@ function paintDiagResult(r) {
   $('#dgDir').onclick = () => post('/api/diag/open-dir', { dir: r.dir });
 }
 
+// 版本配置变更后：清空游戏数据缓存并重读，刷新顶栏与当前视图
+function afterProfileChange() {
+  S.mods = []; S.modByKey = new Map(); S.play = []; S.collections = []; S.colFilter = '';
+  (async () => {
+    await reloadGameData();
+    paintTop();
+    render();
+  })();
+}
+
 async function renderSettings() {
   const c = S.state.config || {};
   let bk = { items: [], total: 0, max: 12, dir: '' };
@@ -3219,6 +3264,16 @@ async function renderSettings() {
         <div class="hint" style="margin:6px 0 0 0;line-height:1.6">
           ${esc(T('settings.gameVersionNote'))}
         </div></div>
+    </div>
+
+    <!-- 版本配置 -->
+    <div class="card" id="verCard">
+      <div class="card-title">◈ ${esc(T('settings.versionProfiles'))}</div>
+      <div class="card-desc" style="margin-bottom:10px">${esc(T('settings.versionProfilesDesc'))}</div>
+      <div id="verProfileList"></div>
+      <div class="bar" style="margin-top:10px">
+        <button class="btn sm" id="verAdd">＋ ${esc(T('settings.addProfile'))}</button>
+      </div>
     </div>
 
     <!-- 数据位置 -->
@@ -3307,6 +3362,47 @@ async function renderSettings() {
     const p = d === 'mod' ? (c.userDir || '') + '\\mod' : (c.userDir || '') + '\\save games';
     post('/api/open', { path: p });
   });
+
+  // 版本配置：列表渲染 + 设为当前 / 保存 / 删除 / 新增
+  const vlist = $('#verProfileList');
+  if (vlist) {
+    const vps = (c.profiles || []);
+    vlist.innerHTML = vps.map(p => `
+      <div class="ver-pf-row ${p.active ? 'active' : ''}">
+        <input class="inp ver-pf-name" data-pf="${esc(p.id)}" data-f="name" value="${esc(p.name)}" placeholder="${esc(T('settings.profileName'))}">
+        <input class="inp ver-pf-ver" data-pf="${esc(p.id)}" data-f="ver" value="${esc(p.gameVersion || '')}" placeholder="${esc(T('settings.profVerPh'))}" style="width:92px">
+        ${p.active
+          ? `<span class="ver-pf-tag">${esc(T('settings.profActive'))}</span>`
+          : `<button class="btn sm ghost" data-pfact="switch" data-id="${esc(p.id)}">${esc(T('settings.setActive'))}</button>`}
+        <button class="btn sm ghost" data-pfact="save" data-id="${esc(p.id)}">${esc(T('common.saveSettings'))}</button>
+        ${vps.length > 1 ? `<button class="btn sm danger" data-pfact="del" data-id="${esc(p.id)}">${esc(T('common.delete'))}</button>` : ''}
+      </div>`).join('');
+    $$('#verProfileList [data-pfact]').forEach(b => b.onclick = async () => {
+      const id = b.dataset.id, act = b.dataset.pfact;
+      if (act === 'del') {
+        if (!confirm(T('settings.confirmDelProfile'))) return;
+        const r = await post('/api/profile/delete', { id });
+        if (r.ok) { S.state = r.state; afterProfileChange(); toast(T('common.deleted'), 'ok'); }
+        else toast(r.error || T('common.failed'), 'err');
+      } else if (act === 'switch') {
+        const r = await post('/api/profile/switch', { id });
+        if (r.ok) { S.state = r.state; afterProfileChange(); toast(T('top.versionSwitched'), 'ok'); }
+        else toast(r.error || T('common.failed'), 'err');
+      } else if (act === 'save') {
+        const row = b.closest('.ver-pf-row');
+        const name = row.querySelector('[data-f=name]').value.trim();
+        const ver = row.querySelector('[data-f=ver]').value.trim();
+        const r = await post('/api/profile/update', { id, name, gameVersion: ver });
+        if (r.ok) { S.state = r.state; afterProfileChange(); toast(T('common.saved'), 'ok'); }
+        else toast(r.error || T('common.failed'), 'err');
+      }
+    });
+  }
+  $('#verAdd').onclick = async () => {
+    const r = await post('/api/profile/add', { name: T('settings.newProfile'), gameVersion: '', gameRoot: '', userDir: '', workshopDir: '' });
+    if (r.ok) { S.state = r.state; afterProfileChange(); toast(T('settings.profileAdded'), 'ok'); }
+    else toast(r.error || T('common.failed'), 'err');
+  };
 
   $('#cVerSync').onclick = () => {
     $('#cVer').value = st.version || '';

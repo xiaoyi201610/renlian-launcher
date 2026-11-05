@@ -286,6 +286,25 @@ def _game_cfg(cfg: dict, key: str) -> dict:
     return g
 
 
+def _resolve_profiles_into_flat(cfg: dict) -> None:
+    """把每个游戏「当前激活版本配置(profile)」的值回填到扁平字段 gameRoot/userDir/
+    workshopDir/gameVersion。
+
+    这样全代码（模组/播放集/DLC/启动/-dataPath 隔离）只读扁平字段也能拿到激活版本
+    的数据，无需逐处改。无 profiles 的游戏保持原扁平字段不动（向后兼容旧单配置）。
+    """
+    for key, g in (cfg.get("games") or {}).items():
+        if not isinstance(g, dict):
+            continue
+        profiles = g.get("profiles") or []
+        if not profiles:
+            continue
+        active = g.get("activeProfile") or profiles[0].get("id")
+        p = next((x for x in profiles if x.get("id") == active), profiles[0])
+        for fld in ("gameRoot", "userDir", "workshopDir", "gameVersion"):
+            g[fld] = p.get(fld) or ""
+
+
 def load_config(game: str | None = None) -> dict:
     """读取主配置。若指定 game，则返回该游戏的合并配置（games[key] 覆盖全局默认）。
 
@@ -315,6 +334,9 @@ def load_config(game: str | None = None) -> dict:
         for fld in ("gameRoot", "userDir", "workshopDir", "gameVersion"):
             cfg.pop(fld, None)
 
+    # 把每个游戏「激活版本配置」的值回填到扁平字段，使后续代码自动跟随切换
+    _resolve_profiles_into_flat(cfg)
+
     # 选择返回：指定 game 则返回合并后的「该游戏视图」，否则返回主配置
     if game:
         key = game if game in GAME_DEFS else "ck3"
@@ -326,28 +348,33 @@ def load_config(game: str | None = None) -> dict:
         merged["currentGame"] = key
         g = _game_cfg(cfg, key)
         merged.update(g)
+        # 把版本配置(profiles) 也带进合并视图，前端顶栏下拉与设置页都依赖它
+        # （无 profiles 的旧配置会在此合成一个「默认」版本项，保证向后兼容）
+        profiles_view, active = list_profiles(cfg, key)
+        merged["profiles"] = profiles_view
+        merged["activeProfile"] = active
         # 自动探测补齐该游戏路径
-        if not merged.get("userDir") or not os.path.isdir(merged["userDir"]):
+        ud = (merged.get("userDir") or "").strip()
+        if not ud:
+            # 完全没配置 userDir → 自动探测（向后兼容旧单配置）
             detected = detect_user_dir(key)
-            if detected:
-                merged["userDir"] = detected
-            else:
-                # 配置里已经存了 userDir，但该目录还没生成（游戏装了却从没用官方
-                # 启动器跑过，群星就是这种）。这里必须「补建目录」，绝不能清成空串：
-                # userDir='' 会让 sqlite / dlc_load.json / mod/*.mod 全部退化成相对
-                # 路径，既把播放集写进启动器自己的安装目录，又让
-                # open('mod\\ugc_x.mod') 直接抛 FileNotFoundError（群星保存失败的根因）。
-                saved = (merged.get("userDir") or "").strip()
-                if saved:
-                    try:
-                        os.makedirs(saved, exist_ok=True)
-                    except Exception:
-                        saved = ""
-                merged["userDir"] = saved
-        if not merged.get("gameRoot") or not os.path.isdir(merged["gameRoot"]):
+            merged["userDir"] = detected or ""
+        elif not os.path.isdir(ud):
+            # 用户显式指定了目录（含版本配置 profile）但还不存在 → 直接创建，
+            # 绝不回退到自动探测。否则新版本配置的独立数据目录会被自动探测劫持回
+            # 默认数据目录，破坏「版本之间文件互相独立」。
+            try:
+                os.makedirs(ud, exist_ok=True)
+            except Exception:
+                pass
+        gr = (merged.get("gameRoot") or "").strip()
+        if not gr:
+            # 没指定本体目录 → 自动探测（版本配置 profile 留空即表示复用默认安装）
             merged["gameRoot"] = detect_game_root(key) or ""
-        if not merged.get("workshopDir") or not os.path.isdir(merged["workshopDir"]):
-            merged["workshopDir"] = detect_workshop_dir(merged["gameRoot"], key) or ""
+        # 指定了本体目录（即便是版本配置里的独立安装）则保留，不回退探测
+        ws = (merged.get("workshopDir") or "").strip()
+        if not ws:
+            merged["workshopDir"] = detect_workshop_dir(merged.get("gameRoot") or "", key) or ""
         return merged
 
     # 未指定 game：返回主配置（含 games 表 + 当前游戏已就绪的视图字段）
@@ -380,7 +407,7 @@ def save_config(cfg: dict) -> None:
     data["currentGame"] = _game_key(cfg)
     data["games"] = games
 
-    # 把当前游戏视图里的路径字段写进 games[currentGame]
+    # 把当前游戏视图里的路径字段写进 games[currentGame]（同时同步到「激活」的版本配置）
     key = data["currentGame"]
     g = dict(games.get(key) or {})
     for fld in ("gameRoot", "userDir", "workshopDir", "lastPlayset"):
@@ -393,6 +420,17 @@ def save_config(cfg: dict) -> None:
         g["gameVersion"] = gv
     else:
         g.pop("gameVersion", None)
+    # 版本配置(profiles)：把路径字段同步进当前激活的那一条，保证切换回来不丢改动
+    profiles = g.get("profiles") or []
+    if profiles:
+        active = g.get("activeProfile") or profiles[0]["id"]
+        for p in profiles:
+            if p["id"] == active:
+                p["gameRoot"] = cfg.get("gameRoot") or ""
+                p["userDir"] = cfg.get("userDir") or ""
+                p["workshopDir"] = cfg.get("workshopDir") or ""
+                p["gameVersion"] = cfg.get("gameVersion") or ""
+                break
     games[key] = g
     data["games"] = games
 
@@ -414,6 +452,144 @@ def set_current_game(key: str) -> dict:
         merged[fld] = cfg.get(fld, DEFAULT_CONFIG[fld])
     save_config(merged)
     return load_config(key)
+
+
+# ---------------------------------------------------------------- 版本配置（多版本切换 / 文件独立）
+# 每个游戏可有多个「版本配置(profile)」：各自独立的 gameVersion / gameRoot / userDir /
+# workshopDir。激活的那条的 userDir 不同 → 模组/播放集/DLC/存档全部隔离；配合设置里的
+# 「启动游戏时传 -dataPath」，游戏运行时也真正去读该 userDir，实现版本间文件互相独立。
+# 旧的单配置（只有扁平字段）会被兼容：首次新增 profile 时自动把现有配置作为「默认」版本。
+
+def _read_raw_config() -> dict:
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def _write_raw_config(data: dict) -> None:
+    os.makedirs(os.path.dirname(CONFIG_PATH) or ".", exist_ok=True)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _new_profile_id(profiles: list) -> str:
+    while True:
+        pid = "p" + uuid.uuid4().hex[:8]
+        if not any(p.get("id") == pid for p in profiles):
+            return pid
+
+
+def list_profiles(cfg: dict, code: str) -> tuple[list, str]:
+    """返回 ([profile...带 active 标记], active_id)。无 profiles 时合成一个默认项（兼容旧配置）。"""
+    g = (cfg.get("games") or {}).get(code) or {}
+    profiles = g.get("profiles") or []
+    if profiles:
+        active = g.get("activeProfile") or profiles[0].get("id")
+        out = [dict(p, active=(p.get("id") == active)) for p in profiles]
+        return out, active
+    defv = g.get("gameVersion") or GAME_DEFS.get(code, {}).get("defaultVersion", "")
+    return [{
+        "id": "default", "name": defv or "默认", "active": True,
+        "gameVersion": g.get("gameVersion") or "",
+        "gameRoot": g.get("gameRoot") or "",
+        "userDir": g.get("userDir") or "",
+        "workshopDir": g.get("workshopDir") or "",
+    }], "default"
+
+
+def switch_profile(code: str, pid: str) -> dict:
+    """切换当前游戏的激活版本配置。"""
+    raw = _read_raw_config()
+    games = raw.get("games") or {}
+    g = games.get(code) or {}
+    profiles = g.get("profiles") or []
+    if not any(p.get("id") == pid for p in profiles):
+        return {"ok": False, "error": "版本配置不存在"}
+    g["activeProfile"] = pid
+    games[code] = g
+    raw["games"] = games
+    _write_raw_config(raw)
+    return {"ok": True, "config": load_config(code)}
+
+
+def add_profile(code: str, data: dict) -> dict:
+    """新增一个版本配置。首次新增时把现有扁平配置作为「默认」版本保留，避免数据丢失。
+    新增后自动切到它。"""
+    raw = _read_raw_config()
+    games = raw.get("games") or {}
+    g = dict(games.get(code) or {})
+    profiles = g.get("profiles") or []
+    # 旧格式首次建 profile：先把现有扁平配置作为「默认」版本存进去
+    if not profiles:
+        legacy_has = any([g.get("gameRoot"), g.get("userDir"),
+                          g.get("workshopDir"), g.get("gameVersion")])
+        if legacy_has:
+            profiles = [{
+                "id": "default",
+                "name": g.get("gameVersion") or GAME_DEFS.get(code, {}).get("defaultVersion", "默认"),
+                "gameVersion": g.get("gameVersion") or "",
+                "gameRoot": g.get("gameRoot") or "",
+                "userDir": g.get("userDir") or "",
+                "workshopDir": g.get("workshopDir") or "",
+            }]
+    name = (data.get("name") or "").strip() or "新版本"
+    pid = _new_profile_id(profiles)
+    prof = {
+        "id": pid, "name": name,
+        "gameVersion": (data.get("gameVersion") or "").strip(),
+        "gameRoot": (data.get("gameRoot") or "").strip(),
+        "userDir": (data.get("userDir") or "").strip(),
+        "workshopDir": (data.get("workshopDir") or "").strip(),
+    }
+    profiles.append(prof)
+    g["profiles"] = profiles
+    g["activeProfile"] = pid
+    games[code] = g
+    raw["games"] = games
+    _write_raw_config(raw)
+    return {"ok": True, "config": load_config(code), "pid": pid}
+
+
+def update_profile(code: str, pid: str, data: dict) -> dict:
+    """修改某版本配置（name/gameVersion/gameRoot/userDir/workshopDir）。"""
+    raw = _read_raw_config()
+    games = raw.get("games") or {}
+    g = games.get(code) or {}
+    profiles = g.get("profiles") or []
+    target = next((p for p in profiles if p.get("id") == pid), None)
+    if not target:
+        return {"ok": False, "error": "版本配置不存在"}
+    for fld in ("name", "gameVersion", "gameRoot", "userDir", "workshopDir"):
+        if fld in data:
+            target[fld] = (data[fld] or "").strip()
+    if not (target.get("name") or "").strip():
+        target["name"] = "未命名"
+    games[code] = g
+    raw["games"] = games
+    _write_raw_config(raw)
+    return {"ok": True, "config": load_config(code)}
+
+
+def delete_profile(code: str, pid: str) -> dict:
+    """删除一个版本配置（至少保留一个）。若删的是激活项，自动回退到第一个。"""
+    raw = _read_raw_config()
+    games = raw.get("games") or {}
+    g = games.get(code) or {}
+    profiles = g.get("profiles") or []
+    if not any(p.get("id") == pid for p in profiles):
+        return {"ok": False, "error": "版本配置不存在"}
+    if len(profiles) <= 1:
+        return {"ok": False, "error": "至少保留一个版本配置"}
+    profiles = [p for p in profiles if p.get("id") != pid]
+    g["profiles"] = profiles
+    if g.get("activeProfile") == pid:
+        g["activeProfile"] = profiles[0].get("id")
+    games[code] = g
+    raw["games"] = games
+    _write_raw_config(raw)
+    return {"ok": True, "config": load_config(code)}
 
 
 # ---------------------------------------------------------------- 版本自检
