@@ -1,7 +1,7 @@
 {
-  "version": "1.6.10",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.10/renlian-launcher_v1.6.10.zip",
-  "notes": "修复顶栏版本下拉：删除配置后仍残留、切到别的游戏还显示上一个游戏版本号的问题。现在按当前游戏独立显示，仅在 2 个以上配置时出现，删除后立即消失并清空旧选项。",
+  "version": "1.6.11",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.11/renlian-launcher_v1.6.11.zip",
+  "notes": "修复文件夹选择框不定位当前目录：64 位下 SendMessageW 的指针参数被截断导致 BFFM_SETSELECTION 失效；现已声明 64 位参数类型，选择框会从当前输入目录（或最近存在的上级目录）打开。",
   "date": "2026-11-05",
   "size": "25.2MB"
 }

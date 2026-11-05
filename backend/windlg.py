@@ -20,6 +20,16 @@ _user32 = ctypes.windll.user32
 _comdlg32 = ctypes.windll.comdlg32
 _shell32 = ctypes.windll.shell32
 
+# 关键：SendMessageW 必须显式声明 64 位参数。
+# 否则 ctypes 默认按 32 位 int 传参，lParam 里的**指针会被截断**，
+# BFFM_SETSELECTIONW 收到无效地址 → 文件夹选择框仍从默认位置打开（定位失效）。
+try:
+    _user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                     ctypes.c_size_t, ctypes.c_ssize_t]
+    _user32.SendMessageW.restype = ctypes.c_ssize_t
+except Exception:
+    pass
+
 # 打开/保存对话框 flags
 OFN_READONLY = 0x00000001
 OFN_OVERWRITEPROMPT = 0x00000002
