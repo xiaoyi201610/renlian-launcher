@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.6.8';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.6.9';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -739,7 +739,7 @@ async function renderMods() {
     paintLists();
     toast('扫描完成：' + S.mods.length + ' 个模组', 'ok');
   };
-  $('#mOpenMod').onclick = () => post('/api/open', { path: S.state.userDir + '/mod' });
+  $('#mOpenMod').onclick = () => post('/api/open', { path: S.state.workshopDir || (S.state.userDir + '/mod') });
   $('#mRegAll').onclick = async () => {
     const btn = $('#mRegAll');
     const oldHtml = btn.innerHTML;

@@ -34,6 +34,10 @@ BIF_RETURNONLYFSDIRS = 0x0001
 BIF_NEWDIALOGSTYLE = 0x0040
 BIF_EDITBOX = 0x0010
 
+# SHBrowseForFolder 回调消息（用于把初始目录定位到 current folder）
+BFFM_INITIALIZED = 1
+BFFM_SETSELECTIONW = 0x400 + 103   # WM_USER + 103
+
 
 class OPENFILENAMEW(ctypes.Structure):
     """注意：不包含末尾的 FlagsEx 字段。
@@ -148,6 +152,23 @@ def _initial_dir(path: str = "") -> str:
     return desktop if os.path.isdir(desktop) else os.path.expanduser("~")
 
 
+def _nearest_dir(path: str = "") -> str:
+    """返回 path（或它最近的、确实存在的上级目录）；都不存在则返回 ""。
+
+    用于「配置里的目录还没建」时，也让文件夹选择框打开到最接近的位置，
+    而不是永远从「此电脑/桌面」开始。
+    """
+    p = (path or "").strip().strip('"').rstrip("\\/")
+    while p:
+        if os.path.isdir(p):
+            return p
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+    return ""
+
+
 def _base_ofn(title: str, default_name: str, filters, initial_dir: str, def_ext: str):
     buf = ctypes.create_unicode_buffer(2048)
     full = default_name
@@ -220,27 +241,50 @@ def open_file(title: str, filters, initial_dir: str = "") -> str:
 
 
 def pick_folder(title: str = "选择文件夹", initial_dir: str = "") -> str:
-    """弹出原生文件夹选择框，返回路径；取消返回 ""。"""
-    try:
-        display = ctypes.create_unicode_buffer(1024)
-        bi = BROWSEINFOW()
-        bi.hwndOwner = _owner()
-        bi.pidlRoot = None
-        bi.pszDisplayName = ctypes.cast(display, wintypes.LPWSTR)
-        bi.lpszTitle = title
-        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_EDITBOX
-        bi.lpfn = None
-        bi.lParam = 0
-        bi.iImage = 0
-        pidl = _shell32.SHBrowseForFolderW(ctypes.byref(bi))
-        if not pidl:
-            return ""
-        path = ctypes.create_unicode_buffer(2048)
-        ok = _shell32.SHGetPathFromIDListW(pidl, path)
+    """弹出原生文件夹选择框，尽量定位到 initial_dir（或其最近的已存在上级）。
+
+    用 SHBrowseForFolderW + BFFM_INITIALIZED 回调把初始目录设过去；
+    否则系统总是从「此电脑 / 桌面」打开（用户会觉得「为什么不定位当前文件夹」）。
+    """
+    start = _nearest_dir(initial_dir) or _initial_dir("")
+
+    def run():
         try:
-            ctypes.windll.ole32.CoTaskMemFree(pidl)
+            display = ctypes.create_unicode_buffer(1024)
+            init_buf = ctypes.create_unicode_buffer(start) if start else None
+
+            CALLBACK = ctypes.WINFUNCTYPE(
+                ctypes.c_int, wintypes.HWND, wintypes.UINT,
+                wintypes.LPARAM, wintypes.LPARAM)
+
+            def _cb(hwnd, msg, lparam, lpdata):
+                if msg == BFFM_INITIALIZED and lpdata:
+                    try:
+                        _user32.SendMessageW(hwnd, BFFM_SETSELECTIONW, 1, lpdata)
+                    except Exception:
+                        pass
+                return 0
+            cb = CALLBACK(_cb)
+
+            bi = BROWSEINFOW()
+            bi.hwndOwner = _owner()
+            bi.pidlRoot = None
+            bi.pszDisplayName = ctypes.cast(display, wintypes.LPWSTR)
+            bi.lpszTitle = title
+            bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_EDITBOX
+            bi.lpfn = ctypes.cast(cb, ctypes.c_void_p)
+            bi.lParam = (ctypes.addressof(init_buf) if init_buf else 0)
+            bi.iImage = 0
+            pidl = _shell32.SHBrowseForFolderW(ctypes.byref(bi))
+            if not pidl:
+                return ""
+            path = ctypes.create_unicode_buffer(2048)
+            ok = _shell32.SHGetPathFromIDListW(pidl, path)
+            try:
+                ctypes.windll.ole32.CoTaskMemFree(pidl)
+            except Exception:
+                pass
+            return path.value if ok else ""
         except Exception:
-            pass
-        return path.value if ok else ""
-    except Exception:
-        return ""
+            return ""
+    return _with_com(run)
