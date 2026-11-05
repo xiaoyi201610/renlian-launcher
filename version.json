@@ -1,7 +1,7 @@
 {
-  "version": "1.6.9",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.9/renlian-launcher_v1.6.9.zip",
-  "notes": "文件夹选择框现在会定位到当前输入框里的目录（或其最近存在的上级目录），不再从「此电脑/桌面」打开；模组页「打开 MOD 目录」改为打开创意工坊目录（workshopDir）。",
+  "version": "1.6.10",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.10/renlian-launcher_v1.6.10.zip",
+  "notes": "修复顶栏版本下拉：删除配置后仍残留、切到别的游戏还显示上一个游戏版本号的问题。现在按当前游戏独立显示，仅在 2 个以上配置时出现，删除后立即消失并清空旧选项。",
   "date": "2026-11-05",
   "size": "25.2MB"
 }

@@ -1077,6 +1077,7 @@ body{
 
 /* ---- 顶栏版本快速切换 ---- */
 .ver-quick { display:flex; align-items:center; gap:6px; margin-left:2px; }
+.ver-quick[hidden] { display:none !important; }
 .ver-quick select { height:30px; font-size:12.5px; background:var(--panel-2); color:var(--fg); border:1px solid var(--line); border-radius:7px; padding:0 8px; cursor:pointer; }
 
 /* ---- 版本配置卡片 ---- */

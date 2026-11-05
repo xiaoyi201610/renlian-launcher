@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.6.9';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.6.10';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -327,7 +327,7 @@ function paintTop() {
   const vprofiles = (st.config && st.config.profiles) || [];
   if (vsel && vquick) {
     if (vprofiles.length > 1) {
-      vquick.hidden = false;
+      vquick.hidden = false; vquick.style.display = '';
       vsel.innerHTML = vprofiles.map(p =>
         `<option value="${esc(p.id)}"${p.active ? ' selected' : ''}>${esc(p.name)}${p.gameVersion ? ' (' + esc(p.gameVersion) + ')' : ''}</option>`
       ).join('');
@@ -351,7 +351,9 @@ function paintTop() {
         saveState('', true);
       };
     } else {
-      vquick.hidden = true;
+      // 只有 1 个（或 0 个）配置时隐藏下拉，并清空残留选项/回调
+      vquick.hidden = true; vquick.style.display = 'none';
+      vsel.innerHTML = ''; vsel.onchange = null;
     }
   }
 
