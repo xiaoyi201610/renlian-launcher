@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.6.3';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.6.4';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -3275,6 +3275,10 @@ async function renderSettings() {
       <div class="bar" style="margin-top:10px">
         <button class="btn sm" id="verAdd">＋ ${esc(T('settings.addProfile'))}</button>
       </div>
+      <div class="hint" id="verDataInfo" style="margin-top:10px;line-height:1.7"></div>
+      <div class="bar" style="margin-top:8px">
+        <button class="btn sm" id="verDpOn" style="display:none">${esc(T('settings.verDpBtn'))}</button>
+      </div>
     </div>
 
     <!-- 通过 Steam 切换游戏版本 -->
@@ -3427,6 +3431,30 @@ async function renderSettings() {
     else toast(r.error || T('common.failed'), 'err');
   };
 
+  // 版本行的「浏览」按钮（在 verProfileList 里后生成，需单独绑定，否则点击无反应）
+  $$('#verProfileList [data-pick]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.pick, inp = $('#' + id);
+    const r = await post('/api/pick-dir', { initial: inp ? inp.value : '' });
+    if (r && r.path && inp) inp.value = r.path;
+  });
+
+  // 多版本「数据隔离」说明 + 一键开启 -dataPath
+  (() => {
+    const info = $('#verDataInfo'), btn = $('#verDpOn');
+    if (!info) return;
+    info.textContent = c.useDataPathArg ? T('settings.verDataOn') : T('settings.verDataOff');
+    if (btn) {
+      btn.style.display = c.useDataPathArg ? 'none' : '';
+      btn.onclick = async () => {
+        btn.disabled = true;
+        await post('/api/config', { useDataPathArg: true });
+        await refreshState();
+        toast(T('settings.verDataEnabled'), 'ok');
+        render();
+      };
+    }
+  })();
+
   // 通过 Steam 切换游戏版本：读分支 + 切换（写 BetaKey，需 Steam 已退出）
   const steamSel = $('#steamSel');
   if (steamSel) {
@@ -3453,16 +3481,29 @@ async function renderSettings() {
     };
     loadSteam();
     $('#steamRefresh').onclick = loadSteam;
+    let steamBusy = false;
     $('#steamSwitch').onclick = async () => {
+      if (steamBusy) return;                       // 防止重复点击
       const key = steamSel.value;
       if (!key) return;
       if (!confirm(T('settings.steamSwitchConfirm', { v: key }))) return;
-      const r = await post('/api/steam/switch', { key, restart: true });
-      if (r.ok) {
-        toast(T('settings.steamSwitched', { v: key }), 'ok');
-        loadSteam();
-        await refreshState();
-      } else toast(r.error || T('common.failed'), 'err');
+      steamBusy = true;
+      const sw = $('#steamSwitch'), hint = $('#steamHint'), old = sw.textContent;
+      sw.disabled = true; sw.textContent = '…';
+      // 明确提示：正在关闭并重启 Steam，需要等几秒，别重复点
+      hint.innerHTML = '<span style="color:var(--gold-b)">' + esc(T('settings.steamSwitching')) + '</span>';
+      try {
+        const r = await post('/api/steam/switch', { key, restart: true });
+        if (r.ok) {
+          toast(T('settings.steamSwitched', { v: key }), 'ok');
+          await loadSteam();
+          await refreshState();
+        } else toast(r.error || T('common.failed'), 'err');
+      } catch (e) {
+        toast(String((e && e.message) || e), 'err');
+      } finally {
+        steamBusy = false; sw.disabled = false; sw.textContent = old;
+      }
     };
   }
 

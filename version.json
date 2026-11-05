@@ -1,7 +1,7 @@
 {
-  "version": "1.6.3",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.3/renlian-launcher_v1.6.3.zip",
-  "notes": "修复 Steam 版本切换不生效：切换时自动关闭并重启 Steam（无需手动退 Steam），并强制置 StateFlags=需更新，Steam 启动后即会真正下载所选版本。版本配置新增时自动创建独立数据目录；游戏版本显示当前版本、切换后自动刷新，并新增「刷新」按钮。",
+  "version": "1.6.4",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.4/renlian-launcher_v1.6.4.zip",
+  "notes": "版本切换体验完善：确认后显示「正在关闭并重启 Steam，约 10–30 秒」提示并防止重复点击；修复版本配置里「浏览」按钮点击无反应；版本配置新增「数据隔离」说明与一键开启 -dataPath（Steam 切版本只换游戏程序，存档/模组默认各版本共用，开启 -dataPath 后才会按版本目录真正隔离）。",
   "date": "2026-11-05",
   "size": "25.2MB"
 }
