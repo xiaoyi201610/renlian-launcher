@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DIST_EXE = os.path.join(HERE, "dist", "人联启动器.exe")
 RELEASE = os.path.join(HERE, "release")
 PKG_NAME = "人联启动器"
-VERSION = "1.5"
+VERSION = "1.5.3"
 PKG = os.path.join(RELEASE, "_stage_" + PKG_NAME)
 ZIP_PATH = os.path.join(RELEASE, f"{PKG_NAME}_v{VERSION}.zip")
 
@@ -52,6 +52,12 @@ def _is_runtime_item(name: str) -> bool:
     # 既不该进发布包，也避免 z.write 读被锁的 lockfile 导致整个打包失败。
     if name in (".edge-profile", "__pycache__"):
         return True
+    # 误落到启动器目录的 P 社数据库 / dlc_load（userDir 未配置时的历史 bug 产物）：
+    # 既不该进发布包，也不该被当成用户数据带出去。
+    if name in ("launcher-v2.sqlite", "launcher.sqlite", "dlc_load.json") or \
+       name.startswith("launcher-v2.sqlite.") or name.endswith(".misplaced.bak"):
+        return True
+    return False
 
 
 def main():

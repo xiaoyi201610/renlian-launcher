@@ -29,6 +29,8 @@ import threading
 import contextlib
 import subprocess
 import glob
+import urllib.request
+import urllib.error
 
 # ---------------------------------------------------------------- 常量
 
@@ -227,6 +229,7 @@ DEFAULT_CONFIG = {
     "closeOnLaunch": False,      # 启动游戏后关闭启动器
     "useDataPathArg": False,     # 启动游戏时传 -dataPath（自定义数据目录时用）
     "uiLang": "zh",              # 界面语言：zh / en / fr / de / sv
+    "updateUrl": "https://gitee.com/xiaoyi2233/renlian-launcher/raw/master/version.json",  # 版本自检地址（GitHub raw 被墙，默认用 Gitee raw；留空则不检查）
 }
 
 
@@ -325,7 +328,22 @@ def load_config(game: str | None = None) -> dict:
         merged.update(g)
         # 自动探测补齐该游戏路径
         if not merged.get("userDir") or not os.path.isdir(merged["userDir"]):
-            merged["userDir"] = detect_user_dir(key) or ""
+            detected = detect_user_dir(key)
+            if detected:
+                merged["userDir"] = detected
+            else:
+                # 配置里已经存了 userDir，但该目录还没生成（游戏装了却从没用官方
+                # 启动器跑过，群星就是这种）。这里必须「补建目录」，绝不能清成空串：
+                # userDir='' 会让 sqlite / dlc_load.json / mod/*.mod 全部退化成相对
+                # 路径，既把播放集写进启动器自己的安装目录，又让
+                # open('mod\\ugc_x.mod') 直接抛 FileNotFoundError（群星保存失败的根因）。
+                saved = (merged.get("userDir") or "").strip()
+                if saved:
+                    try:
+                        os.makedirs(saved, exist_ok=True)
+                    except Exception:
+                        saved = ""
+                merged["userDir"] = saved
         if not merged.get("gameRoot") or not os.path.isdir(merged["gameRoot"]):
             merged["gameRoot"] = detect_game_root(key) or ""
         if not merged.get("workshopDir") or not os.path.isdir(merged["workshopDir"]):
@@ -357,7 +375,7 @@ def save_config(cfg: dict) -> None:
     data: dict = {}
     # 通用开关
     for fld in ("autoBackup", "rememberLastPlayset", "minimizeOnLaunch",
-                "closeOnLaunch", "useDataPathArg", "uiLang"):
+                "closeOnLaunch", "useDataPathArg", "uiLang", "updateUrl"):
         data[fld] = cfg.get(fld, DEFAULT_CONFIG[fld])
     data["currentGame"] = _game_key(cfg)
     data["games"] = games
@@ -397,6 +415,54 @@ def set_current_game(key: str) -> dict:
     save_config(merged)
     return load_config(key)
 
+
+# ---------------------------------------------------------------- 版本自检
+
+def version_greater(a: str, b: str) -> bool:
+    """a 是否比 b 新（按点分数字逐段比较）。空版本视为最旧。"""
+    def _nums(v: str):
+        out = []
+        for p in (v or "").split("."):
+            try:
+                out.append(int(re.sub(r"[^0-9].*$", "", p) or 0))
+            except Exception:
+                out.append(0)
+        return out
+    na, nb = _nums(a), _nums(b)
+    for x, y in zip(na, nb):
+        if x != y:
+            return x > y
+    return len(na) > len(nb)
+
+
+def fetch_update_info(url: str, timeout: int = 8) -> dict:
+    """拉取远程 version.json，返回规范化的更新信息（同源或跨源都不受 CORS 影响，
+
+    因为由本地后端代理请求）。仅接受 http/https，带超时与异常兜底。
+    """
+    if not url or not url.startswith(("http://", "https://")):
+        return {"ok": False, "error": "更新检查地址无效（需以 http:// 或 https:// 开头）"}
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "RenlianLauncher"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="ignore")
+        data = json.loads(raw)
+        latest = str(data.get("version") or "").strip()
+        if not latest:
+            return {"ok": False, "error": "远程文件缺少 version 字段"}
+        return {
+            "ok": True,
+            "latest": latest,
+            "url": data.get("url") or "",
+            "notes": data.get("notes") or "",
+            "date": data.get("date") or "",
+            "size": data.get("size") or "",
+        }
+    except urllib.error.URLError as e:
+        reason = getattr(e, "reason", e)
+        return {"ok": False, "error": f"网络错误：{reason}"}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"读取失败：{e}"}
 
 def _paradox_user_dir() -> str:
     """定位 Paradox Interactive 用户数据根目录（Documents 下）。"""
@@ -928,11 +994,15 @@ class LauncherDB:
 
     # ---- 基础
     def exists(self) -> bool:
-        return os.path.isfile(self.path)
+        # user_dir 为空时 path 是相对路径，指向启动器自己的安装目录。
+        # 此时必须当作「没有库」，否则会把播放集写错地方、甚至跨游戏串数据。
+        return bool(self.user_dir) and os.path.isfile(self.path)
 
     @contextlib.contextmanager
     def connect(self):
         """带自动提交/回滚与关闭的连接上下文（避免句柄泄漏锁住数据库）。"""
+        if not self.user_dir:
+            raise RuntimeError("未设置游戏用户目录，无法访问启动器数据库（请在启动器设置里指定）")
         conn = sqlite3.connect(self.path, timeout=8)
         conn.row_factory = sqlite3.Row
         # 空库/缺表（官方启动器从没建过库，如 CK2）→ 自动补齐官方同构表；
@@ -1071,6 +1141,9 @@ class LauncherDB:
             return {"disabled_dlcs": [], "enabled_mods": []}
 
     def write_dlc_load(self, enabled_mods: list[str], disabled_dlcs: list[str]) -> str | None:
+        # user_dir 为空时路径是相对的，绝不能把 dlc_load.json 写进启动器安装目录
+        if not self.user_dir:
+            return None
         bak = backup_file(self.dlc_load_path, "dlc_load")
         data = {"disabled_dlcs": list(disabled_dlcs), "enabled_mods": list(enabled_mods)}
         tmp = self.dlc_load_path + ".tmp"
@@ -1085,10 +1158,14 @@ class LauncherDB:
             return []
         try:
             with self.connect() as c:
+                # gameRegistryId 是官方启动器写下的 .mod 相对路径，最权威。
+                # 自建的简化库没有这列，动态探测避免 SELECT 整段失败。
+                cols = {r[1] for r in c.execute("PRAGMA table_info(mods)")}
+                extra = ", gameRegistryId" if "gameRegistryId" in cols else ""
                 rows = c.execute(
                     """SELECT id, steamId, name, displayName, version, dirPath, archivePath,
-                              source, status, thumbnailPath, timeUpdated
-                       FROM mods"""
+                              source, status, thumbnailPath, timeUpdated""" + extra +
+                    " FROM mods"
                 ).fetchall()
             return [dict(r) for r in rows]
         except Exception:
@@ -1102,17 +1179,26 @@ class LauncherDB:
         """
         steam_id = rec.get("steamId")
         dir_path = rec.get("dirPath")
+        # 本地 mod 的 .mod 描述文件里经常残留 remote_file_id（从工坊复制下来改的）。
+        # 它只是元数据，绝不能拿它去复用注册表里的工坊记录，否则播放集里的
+        # 本地 mod 会被静默顶替成工坊版（用户实测：single_heir 变工坊单一指定继承人）。
+        is_local = str(rec.get("source") or "").strip().lower() == "local"
         own = conn is None
         ctx = self.connect() if own else contextlib.nullcontext(conn)
         with ctx as c:
             row = None
-            if steam_id:
+            if steam_id and not is_local:
                 row = c.execute(
                     "SELECT id FROM mods WHERE steamId=? LIMIT 1", (str(steam_id),)
                 ).fetchone()
-            if row is None:
+            if row is None and dir_path:
                 row = c.execute(
                     "SELECT id FROM mods WHERE dirPath=? LIMIT 1", (dir_path,)
+                ).fetchone()
+            if row is None and steam_id and is_local:
+                row = c.execute(
+                    "SELECT id FROM mods WHERE steamId=? AND source='local' LIMIT 1",
+                    (str(steam_id),),
                 ).fetchone()
             if row is not None:
                 return row["id"]
@@ -1124,7 +1210,7 @@ class LauncherDB:
                    VALUES (?,?,?,?,?,?,?,?,?,?,0,'not_applied')""",
                 (
                     new_id,
-                    str(steam_id) if steam_id else None,
+                    str(steam_id) if (steam_id and not is_local) else None,
                     rec.get("name") or "",
                     rec.get("displayName") or rec.get("name") or "",
                     rec.get("version") or "",
@@ -1256,23 +1342,69 @@ class LauncherDB:
         return True
 
 
+_PATHMAP_CACHE: dict = {"key": None, "data": {}}
+
+
+def _path_to_modfile_map(user_dir: str) -> dict:
+    """反查表：normcase(abspath(.mod 里的 path)) → "mod/<文件名>.mod"。
+
+    用 .mod 目录签名缓存：真实 CK3 有 700 个 .mod，每次播放集读写都重扫
+    会多出半秒延迟；描述文件没变化就直接复用。
+    """
+    mod_dir = os.path.join(user_dir, "mod") if user_dir else ""
+    has = os.path.isdir(mod_dir)
+    sig = _dir_sig(mod_dir) if has else ""
+    key = (mod_dir, sig)
+    if _PATHMAP_CACHE["key"] == key:
+        return _PATHMAP_CACHE["data"]
+    out: dict = {}
+    if has:
+        try:
+            for fn in os.listdir(mod_dir):
+                if not fn.lower().endswith(".mod"):
+                    continue
+                p = (parse_descriptor(os.path.join(mod_dir, fn)).get("path") or "").strip()
+                if not p:
+                    continue
+                if not os.path.isabs(p):
+                    p = os.path.join(user_dir, p)
+                out[os.path.normcase(os.path.abspath(p))] = "mod/" + fn
+        except Exception:
+            pass
+    _PATHMAP_CACHE.update({"key": key, "data": out})
+    return out
+
+
 def _mod_id_to_file_map(db: LauncherDB) -> dict:
     """modId(uuid) → dlc_load.json 里的 mod 文件相对路径。
 
-    纯函数式构造（不查文件系统），保证映射稳定、不会因扫描失败而丢项：
-      · 有 steamId        → mod/ugc_<steamId>.mod（官方启动器同款命名）
-      · 有 dirPath        → mod/<目录名>.mod
-      · 只有 name         → mod/<name>.mod
+    优先级（越靠前越权威）：
+      1. 官方注册表里的 gameRegistryId —— 官方启动器自己写的 mod/xxx.mod
+      2. 按 dirPath 反查 mod/*.mod 描述文件里的 path —— 本地 mod 的关键：
+         本地 .mod 常残留 remote_file_id，绝不能据此写成 mod/ugc_<sid>.mod
+      3. 工坊记录（source != local 且有 steamId）→ mod/ugc_<steamId>.mod
+      4. dirPath 目录名 / name 兜底
     """
+    by_path = _path_to_modfile_map(db.user_dir)
     out: dict = {}
     for r in db.mod_records():
-        sid = (r.get("steamId") or "").strip()
+        reg = (r.get("gameRegistryId") or "").strip().replace("\\", "/")
+        if reg.lower().startswith("mod/") and reg.lower().endswith(".mod"):
+            out[r["id"]] = reg
+            continue
         dp = (r.get("dirPath") or "").strip().rstrip("\\/")
+        if dp:
+            hit = by_path.get(os.path.normcase(os.path.abspath(dp)))
+            if hit:
+                out[r["id"]] = hit
+                continue
+        sid = (r.get("steamId") or "").strip()
+        src = (r.get("source") or "").strip().lower()
         base = os.path.basename(dp) if dp else ""
         if not sid and base.isdigit():
             # 工坊目录名就是 Steam ID，即使注册表里 steamId 为空也能推断
             sid = base
-        if sid:
+        if sid and src != "local":
             out[r["id"]] = f"mod/ugc_{sid}.mod"
             continue
         if base:
@@ -1374,7 +1506,13 @@ def build_mod_index(cfg: dict, force: bool = False) -> list[dict]:
         content_dir = path_attr
         if content_dir and not os.path.isabs(content_dir):
             content_dir = os.path.join(user_dir, content_dir)
-        rec = by_steam.get(remote_id) if remote_id else None
+        workshop_root = cfg.get("workshopDir") or ""
+        in_workshop = bool(workshop_root) and os.path.isdir(content_dir) and \
+            os.path.abspath(content_dir).lower().startswith(os.path.abspath(workshop_root).lower())
+        # 本地 mod 的 .mod 里常残留 remote_file_id（从工坊复制下来自己改的）。
+        # 只有 path 确实指向工坊目录时，才允许按它去匹配注册表里的工坊记录；
+        # 否则一律按目录匹配本地记录，避免播放集里的本地 mod 被静默顶替成工坊版。
+        rec = by_steam.get(remote_id) if (remote_id and in_workshop) else None
         if rec is None and content_dir:
             rec = by_dir.get(os.path.normcase(os.path.abspath(content_dir)))
 
@@ -1385,9 +1523,6 @@ def build_mod_index(cfg: dict, force: bool = False) -> list[dict]:
         # （不能只看 remote_file_id：本地 mod 的 .mod 文件里也常残留 remote_file_id）
         # 最高优先级：用户手动覆盖（本地/工坊），可修复自动判定错误。
         manual_src = get_mod_source_override(cfg.get("currentGame") or "ck3", mod_file)
-        workshop_root = cfg.get("workshopDir") or ""
-        in_workshop = bool(workshop_root) and os.path.isdir(content_dir) and \
-            os.path.abspath(content_dir).lower().startswith(os.path.abspath(workshop_root).lower())
         if manual_src:
             source = manual_src
         elif in_workshop:
@@ -1397,6 +1532,7 @@ def build_mod_index(cfg: dict, force: bool = False) -> list[dict]:
         else:
             # path 无效/缺失：回退到 rec.source 或 remote_id
             source = (rec.get("source") if rec else None) or ("steam" if remote_id else "local")
+        is_ws = (source == "steam")
 
         # 缩略图
         thumb = None
@@ -1427,7 +1563,11 @@ def build_mod_index(cfg: dict, force: bool = False) -> list[dict]:
                 "key": mod_file.lower(),
                 "modFile": mod_file,
                 "modId": rec["id"] if rec else None,
-                "steamId": remote_id or None,
+                # 本地 mod 的 steamId 必须是 None：下游 _rec_of / ensure_mod /
+                # _mod_id_to_file_map 都拿它当身份，残留的工坊 ID 会把本地记录
+                # 绑到工坊版。原值另存 originSteamId，仅供展示/参考。
+                "steamId": (remote_id or None) if is_ws else None,
+                "originSteamId": None if is_ws else (remote_id or None),
                 "name": display_name,
                 "originalName": original_name,   # 原始名，恢复用
                 "aliased": bool(alias),           # 是否被自定义改名
@@ -1448,7 +1588,13 @@ def build_mod_index(cfg: dict, force: bool = False) -> list[dict]:
 
     # 工坊里已订阅但还没被注册成 .mod 的（新订阅）
     workshop = cfg.get("workshopDir") or ""
-    known_steam = {i["steamId"] for i in items if i["steamId"]}
+    known_steam = set()
+    for i in items:
+        if i.get("steamId"):
+            known_steam.add(i["steamId"])
+        if i.get("originSteamId"):
+            # 本地 mod 里残留的工坊 ID 也参与去重，避免同一个订阅冒出两个条目
+            known_steam.add(i["originSteamId"])
     if workshop and os.path.isdir(workshop):
         try:
             for e in os.scandir(workshop):
@@ -1528,8 +1674,14 @@ def _dir_size(path: str) -> int:
 
 
 def register_mod_descriptor(cfg: dict, steam_id: str) -> dict:
-    """把工坊 mod 写成 mod/ugc_<id>.mod 描述文件（官方启动器同款命名）。"""
-    user_dir = cfg.get("userDir") or ""
+    """把工坊 mod 写成 mod/ugc_<id>.mod 描述文件（官方启动器同款命名）。
+
+    注意：绝不能让 userDir 为空时写出相对路径 'mod\\ugc_x.mod'——那会在
+    open() 时抛 FileNotFoundError，连带把「保存播放集」和「识别新订阅」都搞崩。
+    """
+    user_dir = (cfg.get("userDir") or "").strip()
+    if not user_dir:
+        return {"ok": False, "error": "未设置游戏用户目录，无法生成 .mod 描述文件"}
     workshop = cfg.get("workshopDir") or ""
     src = os.path.join(workshop, steam_id, "descriptor.mod")
     if not os.path.isfile(src):
@@ -1544,9 +1696,28 @@ def register_mod_descriptor(cfg: dict, steam_id: str) -> dict:
     )
     if desc.get("tags"):
         content += "tags={\n" + "".join(f'\t"{t}"\n' for t in desc["tags"]) + "}\n"
-    dst = os.path.join(user_dir, "mod", f"ugc_{steam_id}.mod")
-    with open(dst, "w", encoding="utf-8", newline="\n") as f:
-        f.write(content)
+    mod_dir = os.path.join(user_dir, "mod")
+    dst = os.path.abspath(os.path.join(mod_dir, f"ugc_{steam_id}.mod"))
+    # 保护：同名 .mod 可能是一个本地 mod 在用（用户把工坊 mod 复制下来自己改）。
+    # 直接覆盖会把它的 path 洗成工坊目录，播放集里的本地 mod 就变成工坊版了。
+    if os.path.isfile(dst):
+        try:
+            old_p = (parse_descriptor(dst).get("path") or "").strip()
+            if old_p:
+                if not os.path.isabs(old_p):
+                    old_p = os.path.join(user_dir, old_p)
+                if not os.path.abspath(old_p).lower().startswith(os.path.abspath(workshop).lower()):
+                    return {"ok": False,
+                            "error": f"ugc_{steam_id}.mod 已被本地模组占用，未覆盖"}
+        except Exception:
+            pass
+    try:
+        # 新装游戏/首次用官方启动器前，mod/ 目录往往还不存在 → 自动补建
+        os.makedirs(mod_dir, exist_ok=True)
+        with open(dst, "w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
+    except OSError as ex:
+        return {"ok": False, "error": "写入描述文件失败：%s" % ex}
     return {"ok": True, "path": dst}
 
 

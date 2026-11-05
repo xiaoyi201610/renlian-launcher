@@ -21,6 +21,9 @@ const S = {
   colFilter: '',         // 当前收藏夹筛选（空=全部）
 };
 
+/* ---------------- 常量 ---------------- */
+const LAUNCHER_VERSION = '1.5.3';   // 与 make_release.py 的 VERSION 保持一致
+
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
   const r = await fetch(path, opts ? { headers: { 'Content-Type': 'application/json' }, ...opts } : undefined);
@@ -247,7 +250,7 @@ async function boot() {
 function paintTop() {
   const st = S.state;
   $('#gameVer').textContent = (st.versionFull || st.version || T('common.unknown'));
-  $('#footVer').textContent = 'v1.5';
+  $('#footVer').textContent = 'v' + LAUNCHER_VERSION;
 
   // 游戏切换器：封面图 + 名称 + 版本
   const cur = st.currentGame || 'ck3';
@@ -545,13 +548,14 @@ async function renderHome() {
   const fc = $('#fixCons');
   if (fc) fc.onclick = async () => {
     const r = await post('/api/playset/sync', {});
-    toast(r.ok ? '已按播放集重写 dlc_load.json' : '修复失败', r.ok ? 'ok' : 'err');
+    toast(r.ok ? '已按播放集重写 dlc_load.json' : (r.error || '修复失败'), r.ok ? 'ok' : 'err');
     render();
   };
   // 下拉选完直接生效，不用再点按钮
   const switchTo = async (id, label) => {
     if (!id) return;
-    await post('/api/playset/activate', { id });
+    const r = await post('/api/playset/activate', { id });
+    if (!r.ok) { toast(r.error || '切换播放集失败', 'err'); return; }
     await refreshState();
     render();
     toast('已切换到：' + (label || '播放集'), 'ok');
@@ -702,10 +706,29 @@ async function renderMods() {
   };
   $('#mOpenMod').onclick = () => post('/api/open', { path: S.state.userDir + '/mod' });
   $('#mRegAll').onclick = async () => {
-    const r = await post('/api/register-all', {});
-    toast(r.registered?.length ? `已注册 ${r.registered.length} 个新订阅` : '没有需要注册的新订阅',
-      r.registered?.length ? 'ok' : '');
-    if (r.registered?.length) { $('#mRefresh').click(); }
+    const btn = $('#mRegAll');
+    const oldHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = TT('识别中…');
+    try {
+      const r = await post('/api/register-all', {});
+      const ok = (r.registered || []).length;
+      const bad = r.failed || 0;
+      if (r.error) toast(TT('部分失败：') + r.error, 'err');
+      if (ok) {
+        toast(TT('已注册 {} 个新订阅').replace('{}', ok) +
+              (bad ? '，' + bad + ' ' + TT('失败') : ''), bad ? '' : 'ok');
+        $('#mRefresh').click();
+      } else if (!r.error) {
+        toast(TT('没有需要注册的新订阅'));
+      }
+    } catch (e) {
+      toast(TT('识别失败：') + e.message, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = oldHtml;
+      paintLists();
+    }
   };
   const onSearch = (val) => { S.qLeft = val; paintLists(); };
   $('#qLeft').oninput = e => { onSearch(e.target.value); $('#qLeft2').value = e.target.value; e.target.nextElementSibling.hidden = !e.target.value; };
@@ -1882,6 +1905,7 @@ function renderPlaysets() {
       title: '创建播放集', okText: '复制当前', cancelText: '空白创建',
     });
     const r = await post('/api/playset/create', { name, cloneFrom: clone ? S.state.activePlayset : null });
+    if (!r.ok) { toast(r.error || '新建播放集失败', 'err'); return; }
     await refreshState(); render(); toast('已创建：' + name, 'ok');
   };
   $('#psExport').onclick = async () => {
@@ -1899,19 +1923,21 @@ function renderPlaysets() {
     $$('button[data-a]', row).forEach(b => b.onclick = async () => {
       const a = b.dataset.a;
       if (a === 'use') {
-        await post('/api/playset/activate', { id });
+        const r = await post('/api/playset/activate', { id });
+        if (!r.ok) { toast(r.error || '切换播放集失败', 'err'); return; }
         await refreshState(); render(); toast('已切换并同步到游戏', 'ok');
       } else if (a === 'clone') {
         const base = row.querySelector('strong').textContent;
         const copySuffix = i18nLang() === 'zh' ? ' 的副本' : T('的副本');
         const name = await ui.prompt(T('克隆为'), base + copySuffix, { title: T('克隆播放集') });
         if (!name) return;
-        await post('/api/playset/create', { name, cloneFrom: id });
-        await refreshState(); render(); toast('已克隆', 'ok');
-      } else if (a === 'rename') {
+        const r = await post('/api/playset/create', { name, cloneFrom: id });
+        if (!r.ok) { toast(r.error || '克隆播放集失败', 'err'); return; }
+        await refreshState(); render(); toast('已克隆', 'ok');      } else if (a === 'rename') {
         const name = await ui.prompt('新的名称', row.querySelector('strong').textContent, { title: '重命名' });
         if (!name) return;
-        await post('/api/playset/rename', { id, name });
+        const r = await post('/api/playset/rename', { id, name });
+        if (!r.ok) { toast(r.error || '重命名失败', 'err'); return; }
         await refreshState(); render();
       } else if (a === 'export') {
         const r2 = await post('/api/playset/save-as', { id });
@@ -1923,7 +1949,8 @@ function renderPlaysets() {
           title: '删除播放集', okText: '删除', danger: true,
         });
         if (!ok) return;
-        await post('/api/playset/delete', { id });
+        const r = await post('/api/playset/delete', { id });
+        if (!r.ok) { toast(r.error || '删除播放集失败', 'err'); return; }
         await refreshState(); render(); toast('已删除', 'ok');
       }
     });
@@ -3241,6 +3268,19 @@ async function renderSettings() {
     </div>
 
     <div class="card">
+      <div class="card-title">◈ ${esc(T('settings.update'))}</div>
+      <div class="card-desc" style="margin-bottom:10px">${esc(T('settings.updateDesc'))}</div>
+      <div class="form-row"><div class="lab">${esc(T('settings.currentVersion'))}</div>
+        <div class="val"><span style="font-size:13px;color:var(--gold-b);font-weight:600">v${LAUNCHER_VERSION}</span>
+        <button class="btn sm ghost" id="cCheckUpd">${esc(T('settings.checkUpdate'))}</button></div></div>
+      <div class="form-row"><div class="lab">${esc(T('settings.updateUrl'))}</div>
+        <div class="val"><input type="text" id="cUpdUrl" value="${esc(c.updateUrl || '')}" placeholder="https://你的域名/人联启动器/version.json"
+          style="flex:1;min-width:220px">
+        <button class="btn sm ghost" id="cUpdSave">${esc(T('common.saveSettings'))}</button></div></div>
+      <div id="updResult" class="upd-result" style="display:none"></div>
+    </div>
+
+    <div class="card">
       <div class="card-title">◈ ${esc(T('settings.about'))}</div>
       <div class="hint" style="margin-top:8px">
         ${T('settings.aboutBody', { dir: bk.dir || st.backupDir || '' })}
@@ -3296,6 +3336,33 @@ async function renderSettings() {
     S.modByKey = new Map(S.mods.map(m => [m.modFile.toLowerCase(), m]));
     toast(`设置已保存 · 识别到 ${S.mods.length} 个模组`, 'ok');
     renderSettings();
+  };
+
+  // 版本自检：保存地址并检查
+  const checkUpdate = async () => {
+    const url = $('#cUpdUrl').value.trim();
+    const box = $('#updResult');
+    if (!url) { box.style.display = 'block'; box.className = 'upd-result upd-warn';
+      box.textContent = T('settings.updateNoUrl'); return; }
+    box.style.display = 'block'; box.className = 'upd-result upd-loading';
+    box.textContent = T('settings.checking');
+    const r = await post('/api/check-update', { url, current: LAUNCHER_VERSION });
+    if (!r.ok) { box.className = 'upd-result upd-err'; box.textContent = T('settings.updateFail') + '：' + (r.error || ''); return; }
+    if (r.updateAvailable) {
+      box.className = 'upd-result upd-new';
+      box.innerHTML = T('settings.updateNew', { v: r.latest })
+        + (r.date ? `（${esc(r.date)}）` : '')
+        + (r.notes ? `<div class="upd-notes">${esc(r.notes)}</div>` : '')
+        + (r.url ? `<a class="upd-dl" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(T('settings.download'))}</a>` : '');
+    } else {
+      box.className = 'upd-result upd-ok';
+      box.textContent = T('settings.updateLatest', { v: r.latest });
+    }
+  };
+  $('#cCheckUpd').onclick = checkUpdate;
+  $('#cUpdSave').onclick = async () => {
+    const r = await post('/api/config', { updateUrl: $('#cUpdUrl').value.trim() });
+    toast(r.ok ? T('settings.updateUrlSaved') : T('settings.saveFailed'), r.ok ? 'ok' : 'err');
   };
   $('#cReload').onclick = async () => {
     await post('/api/config', { gameRoot: '', userDir: '', workshopDir: '' });
@@ -3390,7 +3457,8 @@ $('#btnHelp').onclick = async () => {
   if (!r.ok) toast(r.error || '打不开使用教程', 'err');
 };
 $('#quickPlayset').onchange = async e => {
-  await post('/api/playset/activate', { id: e.target.value });
+  const r = await post('/api/playset/activate', { id: e.target.value });
+  if (!r.ok) { toast(r.error || '切换播放集失败', 'err'); return; }
   await refreshState();
   if (S.route === 'mods') await loadPlayset(); else render();
   toast('已切换到：' + e.target.selectedOptions[0].textContent, 'ok');

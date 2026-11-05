@@ -230,11 +230,76 @@ def api_playset_detail(psid: str) -> dict:
     }
 
 
+def _require_user_dir() -> str:
+    """返回空串表示可用；否则返回给前端显示的友好错误。
+
+    未安装 / 从没跑过官方启动器的游戏，userDir 可能是空的。此时所有播放集
+    写操作都会退化成相对路径（把数据写进启动器安装目录），DB 层会直接抛
+    RuntimeError → 后端 500 → 前端显示红字或「点了没反应」。
+    """
+    ud = (CTX.cfg.get("userDir") or "").strip()
+    if not ud or not os.path.isdir(ud):
+        return "找不到该游戏的用户数据目录，请在「启动器设置」里手动指定"
+    return ""
+
+
+def _playset_op(fn, what: str) -> dict:
+    """播放集写操作统一兜底：目录校验 + 异常转友好错误。"""
+    err = _require_user_dir()
+    if err:
+        return {"ok": False, "error": err}
+    try:
+        return fn()
+    except Exception as ex:
+        return {"ok": False, "error": "%s失败：%s" % (what, ex)}
+
+
+def api_create_playset(body: dict) -> dict:
+    def _do():
+        psid = CTX.db().create_playset(body.get("name") or "新播放集",
+                                       body.get("cloneFrom") or None)
+        return {"ok": True, "id": psid}
+    return _playset_op(_do, "新建播放集")
+
+
+def api_rename_playset(body: dict) -> dict:
+    def _do():
+        CTX.db().rename_playset(body.get("id"), body.get("name") or "未命名")
+        return {"ok": True}
+    return _playset_op(_do, "重命名播放集")
+
+
+def api_delete_playset(body: dict) -> dict:
+    def _do():
+        CTX.db().delete_playset(body.get("id"))
+        return {"ok": True}
+    return _playset_op(_do, "删除播放集")
+
+
+def api_activate_playset(body: dict) -> dict:
+    def _do():
+        CTX.db().set_active(body.get("id"))
+        return {"ok": True}
+    return _playset_op(_do, "切换播放集")
+
+
+def api_sync_playset(body: dict) -> dict:
+    def _do():
+        db = CTX.db()
+        psid = body.get("id") or db.active_playset()
+        r = db.sync_dlc_load(psid)
+        return {"ok": r is not None, "backup": os.path.basename(r or "")}
+    return _playset_op(_do, "同步播放集")
+
+
 def api_save_playset(payload: dict) -> dict:
     psid = payload.get("id")
     raw = payload.get("items") or []
     if not psid:
         return {"ok": False, "error": "缺少播放集 id"}
+    err = _require_user_dir()
+    if err:
+        return {"ok": False, "error": err}
     db = CTX.db()
     if not db.exists():
         return {"ok": False, "error": "找不到启动器数据库（%s）" % os.path.basename(db.path)}
@@ -250,16 +315,30 @@ def api_save_playset(payload: dict) -> dict:
         if not mid and not mf:
             continue
         if mid:
+            # 存量修复：旧版本可能已把本地 mod 存成了工坊记录（播放集里显示工坊版）。
+            # 只要这个 modFile 在索引里判定为本地，就按目录重新绑定身份，纠正脏数据。
+            mf_meta = {}
+            if mf:
+                mf_meta = CTX.mod_by_file.get(mf.lower()) or {}
+            if mf and mf_meta.get("source") == "local":
+                write_items.append({"rec": _rec_of(mf),
+                                    "enabled": bool(it.get("enabled", True)), "modId": None})
+                continue
             # 已有记录：直接用原 modId，绝不做二次推断，避免身份错位
             write_items.append({"modId": mid, "enabled": bool(it.get("enabled", True)), "rec": None})
             continue
         meta = CTX.mod_by_file.get(mf.lower()) or {}
         if meta.get("pending") and meta.get("steamId"):
-            r = core.register_mod_descriptor(CTX.cfg, meta["steamId"])
-            if r.get("ok"):
-                auto_registered.append(meta["steamId"])
-                CTX.mods(force=True)
-                meta = CTX.mod_by_file.get(mf.lower(), meta)
+            # 自动补齐 .mod 描述文件只是附带的便利功能；失败（工坊文件缺失、
+            # 目录没权限等）绝不能连累播放集保存主流程。
+            try:
+                r = core.register_mod_descriptor(CTX.cfg, meta["steamId"])
+                if r.get("ok"):
+                    auto_registered.append(meta["steamId"])
+                    CTX.mods(force=True)
+                    meta = CTX.mod_by_file.get(mf.lower(), meta)
+            except Exception:
+                pass
         rec = _rec_of(mf)
         write_items.append({"rec": rec, "enabled": bool(it.get("enabled", True)), "modId": None})
 
@@ -271,7 +350,10 @@ def api_save_playset(payload: dict) -> dict:
         except Exception:
             pass
 
-    res = db.write_playset(psid, write_items, payload.get("dlcs"))
+    try:
+        res = db.write_playset(psid, write_items, payload.get("dlcs"))
+    except Exception as ex:
+        return {"ok": False, "error": "写入播放集失败：%s" % ex}
     return {
         "ok": True,
         "saved": len(write_items),
@@ -324,6 +406,9 @@ def _mod_installed(meta: dict) -> bool:
 
 
 def api_import_playset(payload: dict) -> dict:
+    err = _require_user_dir()
+    if err:
+        return {"ok": False, "error": err}
     data = payload.get("data") or {}
     name = payload.get("name") or data.get("name") or "导入的播放集"
     mods = data.get("mods") or []
@@ -377,7 +462,10 @@ def api_import_playset(payload: dict) -> dict:
         ordered.append({"modFile": hit["modFile"], "enabled": bool(m.get("enabled", True))})
 
     db = CTX.db()
-    new_id = db.create_playset(name)
+    try:
+        new_id = db.create_playset(name)
+    except Exception as ex:
+        return {"ok": False, "error": "导入播放集失败：%s" % ex}
     write_items = []
     for it in ordered:
         meta = CTX.mod_by_file.get(it["modFile"].lower()) or {}
@@ -390,7 +478,10 @@ def api_import_playset(payload: dict) -> dict:
             "source": meta.get("source") or "local",
         }
         write_items.append({"rec": rec, "enabled": it["enabled"]})
-    db.write_playset(new_id, write_items, data.get("dlcs"))
+    try:
+        db.write_playset(new_id, write_items, data.get("dlcs"))
+    except Exception as ex:
+        return {"ok": False, "error": "导入播放集失败：%s" % ex}
 
     # 缺失且带工坊 ID 的 mod：直接让 Steam 订阅（下载是异步的，导入时还不存在文件）
     missing_steam_ids = list(dict.fromkeys(missing_steam_ids))
@@ -1047,6 +1138,17 @@ class Handler(BaseHTTPRequestHandler):
                 core.save_config(CTX.cfg)
                 self._json({"ok": True, "lang": lang}); return
 
+            if p == "/api/check-update":
+                # 版本自检：本地后端代理拉取远程 version.json，绕开 webview 直连外网的 CORS 限制。
+                # 走 POST JSON 体（与前端 post() 一致），不再依赖查询串。
+                url = (body.get("url") or "").strip()
+                current = (body.get("current") or "").strip()
+                info = core.fetch_update_info(url)
+                if info.get("ok"):
+                    info["current"] = current
+                    info["updateAvailable"] = bool(current) and core.version_greater(info["latest"], current)
+                self._json(info); return
+
             if p == "/api/mod/pack/prepare":
                 mf = body.get("modFile") or ""
                 if not mf:
@@ -1060,24 +1162,15 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/playset/save":
                 self._json(api_save_playset(body)); return
             if p == "/api/playset/create":
-                psid = CTX.db().create_playset(
-                    body.get("name") or "新播放集", body.get("cloneFrom") or None
-                )
-                self._json({"ok": True, "id": psid}); return
+                self._json(api_create_playset(body)); return
             if p == "/api/playset/rename":
-                CTX.db().rename_playset(body.get("id"), body.get("name") or "未命名")
-                self._json({"ok": True}); return
+                self._json(api_rename_playset(body)); return
             if p == "/api/playset/delete":
-                CTX.db().delete_playset(body.get("id"))
-                self._json({"ok": True}); return
+                self._json(api_delete_playset(body)); return
             if p == "/api/playset/activate":
-                CTX.db().set_active(body.get("id"))
-                self._json({"ok": True}); return
+                self._json(api_activate_playset(body)); return
             if p == "/api/playset/sync":
-                db = CTX.db()
-                psid = body.get("id") or db.active_playset()
-                r = db.sync_dlc_load(psid)
-                self._json({"ok": r is not None, "backup": os.path.basename(r or "")}); return
+                self._json(api_sync_playset(body)); return
             if p == "/api/backup":
                 db = CTX.db()
                 made = []
@@ -1204,17 +1297,34 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/register-all":
                 CTX.mods(force=True)
                 pend = [m for m in CTX.mod_index if m.get("pending") and m.get("steamId")]
-                done = []
+                done, first_err = [], ""
+                failed = 0
                 for m in pend:
-                    if core.register_mod_descriptor(CTX.cfg, m["steamId"]).get("ok"):
-                        done.append(m["steamId"])
-                CTX.mods(force=True)
-                self._json({"ok": True, "registered": done}); return
+                    # 单个 mod 注册失败不能中断整批，也不能让接口 500 后前端「没反应」
+                    try:
+                        r = core.register_mod_descriptor(CTX.cfg, m["steamId"])
+                        if r.get("ok"):
+                            done.append(m["steamId"])
+                        else:
+                            failed += 1
+                            if not first_err:
+                                first_err = str(r.get("error") or "未知错误")
+                    except Exception as ex:
+                        failed += 1
+                        if not first_err:
+                            first_err = str(ex)
+                if done:
+                    CTX.mods(force=True)
+                self._json({"ok": True, "registered": done, "failed": failed,
+                            "error": first_err}); return
             if p == "/api/config":
                 cfg = dict(CTX.cfg)
                 for k in ("gameRoot", "userDir", "workshopDir", "gameVersion"):
                     if body.get(k):
                         cfg[k] = body[k]
+                # 版本自检地址：顶层全局配置（与 uiLang 同级），留空则不检查
+                if "updateUrl" in body:
+                    cfg["updateUrl"] = (body["updateUrl"] or "").strip()
                 for k in ("autoBackup", "rememberLastPlayset",
                           "minimizeOnLaunch", "closeOnLaunch", "useDataPathArg"):
                     if k in body:
