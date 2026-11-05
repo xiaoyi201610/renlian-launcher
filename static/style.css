@@ -1157,3 +1157,39 @@ body{
 
 .wk-foot{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:8px;border-top:1px solid var(--line-soft)}
 .wk-src{font-size:11.5px;color:var(--dim-2);margin-right:auto}
+
+/* --- 百科：克制卡片 / 增减值配色 / 传统表格 --- */
+.wk-cycle{margin-bottom:12px}
+.wk-cyc{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin:10px 0 8px}
+.wk-cyc-row{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line-soft);
+  border-radius:8px;padding:7px 10px}
+.wk-cnode{font-size:12.5px;color:var(--fg);font-weight:600;white-space:nowrap}
+.wk-cnode.win{color:var(--red);font-weight:500}
+.wk-carrow{color:var(--gold-b);font-size:12px}
+.wk-ctarget{display:flex;gap:6px;flex-wrap:wrap}
+.wk-hint{font-size:11.5px;color:var(--dim-2)}
+
+.wk-name small{display:block;font-size:11px;color:var(--dim-2);font-weight:400;margin-top:1px}
+.wk-ctr-mini{font-size:11.5px;color:var(--red);border:1px solid rgba(229,83,75,.3);border-radius:5px;
+  padding:1px 6px;white-space:nowrap;flex:none}
+
+.wk-m.pos{color:var(--green)}
+.wk-m.neg{color:var(--red)}
+.wk-m{margin-left:5px;font-weight:600}
+.wk-chip .wk-m:first-child{margin-left:6px}
+
+.wk-flavor{font-size:12.5px;color:var(--dim);line-height:1.8;margin-top:10px;padding:8px 10px;
+  background:var(--bg);border-left:2px solid var(--gold-dim);border-radius:0 6px 6px 0}
+
+.wk-trad-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.wk-trad-table th{text-align:left;color:var(--dim-2);font-weight:500;font-size:11.5px;padding:4px 8px;
+  border-bottom:1px solid var(--line)}
+.wk-trad-table td{padding:7px 8px;border-bottom:1px solid var(--line-soft);color:var(--fg-2);line-height:1.7;vertical-align:top}
+.wk-trad-table td:first-child{white-space:nowrap;width:150px}
+.wk-trad-table b{color:var(--fg);font-weight:600}
+.wk-trad-table tr:last-child td{border-bottom:none}
+.wk-dlc{font-style:normal;font-size:10.5px;color:var(--gold-b);border:1px solid rgba(200,164,74,.4);
+  border-radius:4px;padding:0 4px;margin-left:4px}
+
+.wk-eff{margin:0;padding-left:16px}
+.wk-eff li{font-size:12.5px;color:var(--fg-2);line-height:1.85;margin-bottom:3px}

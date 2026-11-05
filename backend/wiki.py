@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 3                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 6                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 目录名（相对 gameRoot）
 D_MAA = os.path.join("common", "men_at_arms_types")
@@ -77,6 +77,49 @@ TYPE_LOC_CANDIDATES = {
     "heavy_cavalry": ("accolade_heavy_cavalry", "heavy_cavalry_attribute"),
     "archer_cavalry": ("accolade_horse_archer", "horse_archer_attribute"),
     "gunpowder": ("gunpowder_attribute", "accolade_gunpowder"),
+}
+
+# 冬季等级：游戏里没有对应本地化键，只能内置译名
+WINTER_NAMES = {
+    "mild_winter": ("温和冬季", "Mild Winter"),
+    "normal_winter": ("普通冬季", "Normal Winter"),
+    "harsh_winter": ("严寒冬季", "Harsh Winter"),
+}
+
+# 基础克制闭环：轻步 → 重步 → 长枪 → 轻重骑兵 → 弓箭手 → 轻步
+COUNTER_CYCLE = [
+    ("skirmishers", "heavy_infantry"),
+    ("heavy_infantry", "pikemen"),
+    ("pikemen", "light_cavalry"),
+    ("pikemen", "heavy_cavalry"),
+    ("light_cavalry", "archers"),
+    ("heavy_cavalry", "archers"),
+    ("archers", "skirmishers"),
+]
+
+# 地形/冬季加成里要展示的属性
+MOD_KEYS = ("damage", "toughness", "pursuit", "screen")
+
+# 常见修正键的中文名：游戏里没有单独本地化，这里补一份（只收高频的）
+MODIFIER_NAMES = {
+    "accolade_glory_gain_mult": "荣耀获取",
+    "knight_limit": "骑士数量上限",
+    "character_travel_speed_mult": "旅行速度",
+    "movement_speed": "行军速度",
+    "movement_speed_land_raiding": "陆上劫掠行军速度",
+    "men_at_arms_recruitment_cost": "兵士招募花费",
+    "knight_effectiveness_mult": "骑士战斗力",
+    "character_travel_safety_mult": "旅行安全",
+    "hard_casualty_modifier": "伤亡人数",
+    "cultural_acceptance_gain_mult": "文化接受度增长",
+    "diplomatic_range_mult": "外交范围",
+    "maa_toughness_mult": "兵士坚韧",
+    "maa_damage_mult": "兵士伤害",
+    "prowess_per_piety_level": "每级虔诚提供勇武",
+    "faith_conversion_piety_cost_mult": "改信花费",
+    "development_growth": "发展度成长",
+    "monthly_income_mult": "每月收入",
+    "dynasty_house_opinion": "家族好感",
 }
 
 # 传统分类：文件名主干 → 中文标签
@@ -150,6 +193,29 @@ def _sub(body: str, name: str):
     return body[start:j - 1]
 
 
+def _sub_all(body: str, name: str) -> list:
+    """取 body 内所有 `name = { ... }` 的内部文本（用于 dlc_tradition 这种重复块）。"""
+    out = []
+    pat = re.compile(r"(?:^|[\s{])" + re.escape(name) + r"\s*=\s*\{")
+    i = 0
+    while True:
+        m = pat.search(body, i)
+        if not m:
+            break
+        start = m.end()
+        d, j = 1, start
+        while j < len(body) and d > 0:
+            c = body[j]
+            if c == "{":
+                d += 1
+            elif c == "}":
+                d -= 1
+            j += 1
+        out.append(body[start:j - 1])
+        i = j
+    return out
+
+
 def _val(body: str, name: str):
     """取 `name = value` 的标量值（忽略块）。"""
     m = re.search(r"(?:^|[\s{])" + re.escape(name) + r"\s*=\s*([^\s{}]+)", body)
@@ -197,7 +263,12 @@ def _read_defines(path: str) -> dict:
 # ---------------------------------------------------------------- 本地化
 
 _LOC_PAT = re.compile(r'^\s*([A-Za-z0-9_.\-]+):\d*\s*"((?:[^"\\]|\\.)*)"')
-_REF_PAT = re.compile(r"\$([A-Za-z0-9_.\-]+)\$")
+_REF_PAT = re.compile(r"\$([A-Za-z0-9_.\-]+)\$")          # $变量$
+_TOK_PAT = re.compile(r"\[([A-Za-z0-9_.\-]+)\|E\]", re.I)  # [house|E]
+_FUNC_PAT = re.compile(r"\[[^\[\]]*\([^\[\]]*\)[^\[\]]*\]")  # [GetTrait('x').GetName(...)]
+_TRAIT_PAT = re.compile(r"GetTrait\(\s*'([A-Za-z0-9_\-]+)'\s*\)", re.I)
+_ICON_PAT = re.compile(r"\[[a-z0-9_]+_i\]")                # 图标占位 [prestige_i]
+_MARK_PAT = re.compile(r"#[A-Za-z0-9_!]*")                 # 排版标记 #P #! #bold
 
 
 def _scan_loc(loc_dir: str, needed: set) -> dict:
@@ -220,26 +291,71 @@ def _scan_loc(loc_dir: str, needed: set) -> dict:
     return out
 
 
+def _concept(key: str, raw: dict) -> str:
+    """`[house|E]` 这类引用：优先直取，其次 game_concept_ 前缀，最后退回键名。"""
+    for k in (key, "game_concept_" + key):
+        v = raw.get(k)
+        if v:
+            return v
+    return key
+
+
+def _trait_name(key: str, raw: dict) -> str:
+    for k in (key, "trait_" + key, "game_concept_" + key):
+        v = raw.get(k)
+        if v:
+            return v
+    return _title(key)
+
+
 def _resolve(text: str, raw: dict, depth: int = 3) -> str:
-    """把 `$other_key$` 引用就地展开（游戏里传统名常这么写）。"""
-    if not text or "$" not in text:
+    """展开 $变量$、[概念|E]、[GetTrait('x')...]，丢掉算不出来的脚本函数。"""
+    if not text:
         return text
+    if "$" in text:
+        def rep(m):
+            k = m.group(1)
+            if k in raw and depth > 0:
+                return _resolve(raw[k], raw, depth - 1)
+            return k
+        text = _REF_PAT.sub(rep, text)
+    if "[" in text:
+        def frep(m):
+            s = m.group(0)
+            tm = _TRAIT_PAT.search(s)
+            if tm:
+                return _trait_name(tm.group(1), raw)
+            if "ScriptValue" in s:
+                return "?"          # 数值要靠引擎算，这里给占位
+            return ""
+        text = _FUNC_PAT.sub(frep, text)
+        text = _TOK_PAT.sub(lambda m: _concept(m.group(1), raw), text)
+    return text
 
-    def rep(m):
-        k = m.group(1)
-        if k in raw and depth > 0:
-            return _resolve(raw[k], raw, depth - 1)
-        return k
 
-    return _REF_PAT.sub(rep, text)
+def _ref_keys(text: str) -> set:
+    """一段文本里所有需要回查本地化的键（用于二次扫描）。"""
+    ks = set()
+    ks.update(_REF_PAT.findall(text))
+    ks.update(_TOK_PAT.findall(text))
+    for t in _TRAIT_PAT.findall(text):
+        ks.update((t, "trait_" + t, "game_concept_" + t))
+    ks.update("game_concept_" + k for k in list(ks))
+    return ks
 
 
 def _clean(s: str) -> str:
-    """去掉本地化里的内联格式标记，保留可读文本。"""
+    """去掉排版标记、图标占位，压掉多余空白。"""
     s = s.replace("\\n", " ")
-    s = re.sub(r"#[A-Za-z0-9_]+\s*;?", "", s)
-    s = re.sub(r"\[([A-Za-z0-9_.\-]+)\|E\]", r"\1", s)
+    s = _MARK_PAT.sub("", s)
+    s = _ICON_PAT.sub("", s)
+    s = re.sub(r"[ \t]{2,}", " ", s)
     return s.strip()
+
+
+def _title(key: str) -> str:
+    """脚本键 → 可读英文名（`light_footmen` → `Light Footmen`）。"""
+    return " ".join(w[:1].upper() + w[1:] for w in str(key or "").split("_") if w)
 
 
 def _finalize(raw: dict) -> dict:
@@ -257,6 +373,20 @@ def _pick(loc: dict, keys) -> str:
 
 # ---------------------------------------------------------------- 各分类抽取
 
+def _mod_list(inner: str, loc: dict) -> list:
+    """解析 terrain_bonus / winter_bonus 这类「条目 = { damage = X ... }」块。"""
+    out = []
+    for bk, bv in _top_blocks(inner):
+        mods = {}
+        for k, v in _pairs(bv).items():
+            if k in MOD_KEYS:
+                iv = _int(v)
+                if iv is not None:
+                    mods[k] = iv
+        out.append({"key": bk, "name": loc.get(bk) or bk, "mods": mods})
+    return out
+
+
 def _collect_maa(game_root: str, loc: dict, loc_lang: str) -> list:
     out = []
     for f in sorted(glob.glob(os.path.join(game_root, D_MAA, "*.txt"))):
@@ -273,17 +403,7 @@ def _collect_maa(game_root: str, loc: dict, loc_lang: str) -> list:
                     v = defines.get(v[1:], "")
                 return _int(v)
 
-            terrain = []
-            tb = _sub(body, "terrain_bonus")
-            if tb:
-                for tk, tv in _top_blocks(tb):
-                    p = _pairs(tv)
-                    terrain.append({
-                        "key": tk,
-                        "name": loc.get(tk) or tk,
-                        "damage": _int(p.get("damage")),
-                        "toughness": _int(p.get("toughness")),
-                    })
+            terrain = _mod_list(_sub(body, "terrain_bonus") or "", loc)
 
             counters = []
             cb = _sub(body, "counters")
@@ -299,13 +419,16 @@ def _collect_maa(game_root: str, loc: dict, loc_lang: str) -> list:
             wb = _sub(body, "winter_bonus")
             if wb:
                 for wk, wv in _top_blocks(wb):
-                    p = _pairs(wv)
-                    winter.append({
-                        "key": wk,
-                        "name": loc.get(wk) or wk,
-                        "damage": _int(p.get("damage")),
-                        "toughness": _int(p.get("toughness")),
-                    })
+                    pair = WINTER_NAMES.get(wk)
+                    wname = loc.get(wk) or (pair[0] if (pair and loc_lang == "simp_chinese")
+                                            else (pair[1] if pair else None)) or _title(wk)
+                    mods = {}
+                    for k, v in _pairs(wv).items():
+                        if k in MOD_KEYS:
+                            iv = _int(v)
+                            if iv is not None:
+                                mods[k] = iv
+                    winter.append({"key": wk, "name": wname, "mods": mods})
 
             flags = []
             if _val(body, "special_recruit_only") in ("yes", "yes_no"):
@@ -321,6 +444,8 @@ def _collect_maa(game_root: str, loc: dict, loc_lang: str) -> list:
             out.append({
                 "key": key,
                 "name": loc.get(key) or key,
+                "nameEn": _title(key),
+                "flavor": loc.get(key + "_flavor") or "",
                 "type": typ,
                 "typeName": _type_name(typ, loc, loc_lang),
                 "damage": num("damage"),
@@ -380,12 +505,64 @@ def _pillar(pkey: str, loc: dict) -> dict:
     }
 
 
+def _fmt_num(v: str) -> str:
+    """把修正值格式化成 +10 / -5 / +25% 这样。"""
+    try:
+        f = float(v)
+    except Exception:
+        return ""
+    if 0 < abs(f) < 1:
+        return "%+.0f%%" % (f * 100)
+    if f == int(f):
+        return "%+d" % int(f)
+    return "%+g" % f
+
+
+def _trad_effects(body: str, loc: dict) -> list:
+    """传统效果：parameters 对应的官方说明 + 有译名的修正值。"""
+    eff = []
+    pb = _sub(body, "parameters")
+    if pb:
+        for p in _pairs(pb).keys():
+            t = loc.get("culture_parameter_" + p)
+            if t:
+                eff.append(t)
+    for block in ("character_modifier", "culture_modifier"):
+        mb = _sub(body, block)
+        if not mb:
+            continue
+        for k, v in _pairs(mb).items():
+            if k.startswith("ai_"):        # AI 行为参数，对玩家没意义
+                continue
+            nm = loc.get(k) or MODIFIER_NAMES.get(k)
+            if nm:
+                eff.append("%s %s" % (nm, _fmt_num(v)))
+    # 去重保序
+    seen, out = set(), []
+    for e in eff:
+        e = e.strip()
+        if e and e not in seen:
+            seen.add(e)
+            out.append(e)
+    return out
+
+
 def _collect_cultures(game_root: str, loc: dict, trad_map: dict) -> list:
     out = []
     for f in sorted(glob.glob(os.path.join(game_root, D_CULT, "*.txt"))):
         for key, body in _top_blocks(_read(f)):
-            trad_keys = _list(_sub(body, "traditions"))
             parents = _list(_sub(body, "parents"))
+
+            trad_entries = []
+            for k in _list(_sub(body, "traditions")):
+                trad_entries.append(_trad_entry(k, loc, trad_map, False, ""))
+            # DLC 传统：traditions 块为空的文化（如「汉」）全靠这个
+            for dbody in _sub_all(body, "dlc_tradition"):
+                tk = _val(dbody, "trait")
+                if tk:
+                    trad_entries.append(_trad_entry(tk, loc, trad_map, True,
+                                                    _val(dbody, "requires_dlc_flag") or ""))
+
             out.append({
                 "key": key,
                 "name": loc.get(key) or key,
@@ -394,12 +571,23 @@ def _collect_cultures(game_root: str, loc: dict, trad_map: dict) -> list:
                 "language": _pillar(_val(body, "language") or "", loc),
                 "martial": _pillar(_val(body, "martial_custom") or "", loc),
                 "head": _pillar(_val(body, "head_determination") or "", loc),
-                "traditions": [trad_map.get(k, {"key": k, "name": loc.get(k + "_name") or k}) for k in trad_keys],
+                "traditions": trad_entries,
                 "parents": [{"key": p, "name": loc.get(p) or p} for p in parents],
                 "created": _val(body, "created") or "",
             })
     out.sort(key=lambda x: x["name"])
     return out
+
+
+def _trad_entry(key: str, loc: dict, trad_map: dict, dlc: bool, requires: str) -> dict:
+    base = trad_map.get(key) or {}
+    return {
+        "key": key,
+        "name": base.get("name") or loc.get(key + "_name") or loc.get(key) or key,
+        "desc": base.get("desc") or loc.get(key + "_desc") or "",
+        "dlc": dlc,
+        "requires": requires,
+    }
 
 
 def _collect_traditions(game_root: str, loc: dict) -> tuple:
@@ -418,10 +606,11 @@ def _collect_traditions(game_root: str, loc: dict) -> tuple:
                 "key": key,
                 "name": loc.get(key + "_name") or loc.get(key) or key,
                 "desc": loc.get(key + "_desc") or "",
+                "effects": _trad_effects(body, loc),
                 "cat": cat,
             }
             items.append(it)
-            mapping[key] = {"key": key, "name": it["name"]}
+            mapping[key] = {"key": key, "name": it["name"], "desc": it["desc"]}
     items.sort(key=lambda x: (x["cat"], x["name"]))
     return items, mapping
 
@@ -501,7 +690,7 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
         needed = set()
         for f in glob.glob(os.path.join(game_root, D_MAA, "*.txt")):
             for key, body in _top_blocks(_read(f)):
-                needed.add(key)
+                needed.update((key, key + "_flavor"))
                 t = _val(body, "type") or ""
                 if t:
                     needed.update(TYPE_LOC_CANDIDATES.get(t, ()))
@@ -518,8 +707,16 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
 
         raw_trads = []
         for f in glob.glob(os.path.join(game_root, D_TRAD, "*.txt")):
-            for key, _body in _top_blocks(_read(f)):
+            for key, body in _top_blocks(_read(f)):
                 raw_trads.append(key)
+                # 传统效果：parameters → culture_parameter_*；修正块 → 修正名
+                pb = _sub(body, "parameters")
+                if pb:
+                    needed.update("culture_parameter_" + p for p in _pairs(pb).keys())
+                for block in ("character_modifier", "culture_modifier"):
+                    mb = _sub(body, block)
+                    if mb:
+                        needed.update(_pairs(mb).keys())
         for key, body in [(k, b) for f in glob.glob(os.path.join(game_root, D_CULT, "*.txt"))
                           for k, b in _top_blocks(_read(f))]:
             needed.add(key)
@@ -528,17 +725,24 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
                 if v:
                     needed.update((v, v + "_name", v + "_desc"))
             needed.update(_list(_sub(body, "parents")))
+            for dbody in _sub_all(body, "dlc_tradition"):
+                tk = _val(dbody, "trait")
+                if tk:
+                    needed.update((tk, tk + "_name", tk + "_desc"))
         for key in raw_trads:
             needed.update((key, key + "_name", key + "_desc"))
 
         raw = _scan_loc(loc_dir, needed)
 
-        # 引用展开：部分译名写成 `$其他键$`，把被引用的键也补扫回来再展开
-        refs = set()
-        for v in raw.values():
-            refs.update(_REF_PAT.findall(v))
-        refs -= set(raw.keys())
-        if refs:
+        # 引用展开：译名/效果里会引用 `$键$`、`[概念|E]`、`[GetTrait('x')]`，
+        # 把这些被引用的键也补扫回来（做两轮，够覆盖二级引用）
+        for _round in range(2):
+            refs = set()
+            for v in raw.values():
+                refs.update(_ref_keys(v))
+            refs -= set(raw.keys())
+            if not refs:
+                break
             for k, v in _scan_loc(loc_dir, refs).items():
                 raw.setdefault(k, v)
         loc = _finalize(raw)
@@ -547,6 +751,25 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
         traditions, trad_map = _collect_traditions(game_root, loc)
         maa = _collect_maa(game_root, loc, loc_lang)
         cultures = _collect_cultures(game_root, loc, trad_map)
+
+        # 3) 克制关系：闭环 + 每个兵种的「被谁克制」
+        tname = {}
+        for m in maa:
+            tname.setdefault(m["type"], m["typeName"])
+        cycle = [{"from": {"key": a, "name": tname.get(a, a)},
+                  "to": {"key": b, "name": tname.get(b, b)}}
+                 for a, b in COUNTER_CYCLE]
+        countered = {}
+        for a, b in COUNTER_CYCLE:
+            countered.setdefault(b, []).append({"key": a, "name": tname.get(a, a)})
+        for m in maa:
+            m["counteredBy"] = countered.get(m["type"], [])
+
+        cnt = {}
+        for m in maa:
+            cnt[m["type"]] = cnt.get(m["type"], 0) + 1
+        types_info = [{"key": t, "name": tname.get(t, t), "count": cnt[t]}
+                      for t in sorted(cnt, key=lambda x: -cnt[x])]
 
         data = {
             "ok": True,
@@ -560,6 +783,8 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
             "counts": {"maa": len(maa), "cultures": len(cultures), "traditions": len(traditions)},
             "buildMs": int((time.time() - t0) * 1000),
             "types": sorted({m["type"] for m in maa if m["type"]}),
+            "typesInfo": types_info,
+            "counterCycle": cycle,
             "tradCats": sorted({t["cat"] for t in traditions}),
         }
         _MEM[mem_key] = (sig, data)

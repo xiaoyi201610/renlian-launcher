@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7';   // 与 make_release.py 的 VERSION 保持一致（1.7：新增百科）
+const LAUNCHER_VERSION = '1.7.1';   // 与 make_release.py 的 VERSION 保持一致（1.7：新增百科；1.7.1：百科修正）
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -475,6 +475,7 @@ function bindNav() {
 /* ---------------- 百科（军队 / 文化 / 传统） ---------------- */
 const WIKI_SITE = 'https://ck3.paradoxwikis.com/';
 const WIKI_ST = { data: null, owners: null, tab: 'maa', q: '', cat: '', open: '', force: false };
+const WK_LABEL = { damage: 'wiki.damage', toughness: 'wiki.toughness', pursuit: 'wiki.pursuit', screen: 'wiki.screen' };
 
 /* 脚本键 → 可读英文标题（拿去 wiki 搜索用） */
 function wikiTitle(key) {
@@ -490,14 +491,25 @@ function wstat(label, val, unit) {
   return `<div class="wk-stat"><span class="wk-k">${esc(label)}</span>
     <span class="wk-v">${esc(String(val))}${unit ? `<small>${esc(unit)}</small>` : ''}</span></div>`;
 }
-function wpillar(label, p) {
+
+/* 地形/冬季的增减值：正数绿色 +N，负数红色 -N */
+function wmods(mods, compact) {
+  const order = compact ? ['damage', 'toughness'] : ['damage', 'toughness', 'pursuit', 'screen'];
+  const out = [];
+  order.forEach(k => {
+    const v = mods ? mods[k] : undefined;
+    if (v === undefined || v === null || v === 0) return;
+    const cls = v > 0 ? 'pos' : 'neg';
+    out.push(`<span class="wk-m ${cls}">${compact ? '' : esc(T(WK_LABEL[k])) + ' '}${v > 0 ? '+' : ''}${v}</span>`);
+  });
+  return out.join('');
+}
+
+function wpillar(label, p, withDesc) {
   if (!p || !p.name) return '';
   return `<div class="wk-pillar"><span class="wk-k">${esc(label)}</span>
     <span class="wk-pv">${esc(p.name)}</span>
-    ${p.desc ? `<div class="wk-pd">${esc(p.desc)}</div>` : ''}</div>`;
-}
-function wikiChips(items, fmt) {
-  return `<div class="wk-chips">${items.map(fmt).join('')}</div>`;
+    ${(withDesc && p.desc) ? `<div class="wk-pd">${esc(p.desc)}</div>` : ''}</div>`;
 }
 
 async function renderWiki() {
@@ -553,7 +565,7 @@ function wikiItems() {
   if (WIKI_ST.tab === 'maa') {
     return (d.maa || []).filter(m =>
       (!cat || m.type === cat) &&
-      (hit(m.name) || hit(m.key) || hit(m.typeName)));
+      (hit(m.name) || hit(m.nameEn) || hit(m.key) || hit(m.typeName)));
   }
   if (WIKI_ST.tab === 'cultures') {
     return (d.cultures || []).filter(c =>
@@ -561,17 +573,14 @@ function wikiItems() {
       (hit(c.name) || hit(c.key) || hit(c.ethos && c.ethos.name) || hit(c.heritage && c.heritage.name)));
   }
   return (d.traditions || []).filter(t =>
-    (!cat || t.cat === cat) && (hit(t.name) || hit(t.key) || hit(t.desc)));
+    (!cat || t.cat === cat) &&
+    (hit(t.name) || hit(t.key) || hit(t.desc) || (t.effects || []).some(hit)));
 }
 
 function wikiFilters() {
   const d = WIKI_ST.data;
   if (WIKI_ST.tab === 'maa') {
-    const list = (d.types || []).map(t => ({
-      v: t, label: (d.maa.find(m => m.type === t) || {}).typeName || t,
-      n: (d.maa || []).filter(m => m.type === t).length,
-    }));
-    return list;
+    return (d.typesInfo || []).map(t => ({ v: t.key, label: t.name, n: t.count }));
   }
   if (WIKI_ST.tab === 'cultures') {
     const seen = {};
@@ -587,15 +596,43 @@ function wikiFilters() {
   }));
 }
 
+/* 顶部基础克制闭环卡片 */
+function wikiCycleCard() {
+  const cyc = WIKI_ST.data.counterCycle || [];
+  if (!cyc.length) return '';
+  const rows = [];
+  const idx = {};
+  cyc.forEach(c => {
+    const k = c.from.key;
+    if (!(k in idx)) { idx[k] = rows.length; rows.push({ from: c.from, to: [c.to] }); }
+    else rows[idx[k]].to.push(c.to);
+  });
+  return `<div class="card wk-cycle">
+    <div class="card-title">⚔ ${esc(T('wiki.baseCounter'))}</div>
+    <div class="wk-cyc">
+      ${rows.map(r => `<div class="wk-cyc-row">
+        <span class="wk-cnode">${esc(r.from.name)}</span>
+        <span class="wk-carrow">➜</span>
+        <span class="wk-ctarget">${r.to.map(t => `<span class="wk-cnode win">${esc(t.name)}</span>`).join('')}</span>
+      </div>`).join('')}
+    </div>
+    <div class="wk-hint">${esc(T('wiki.baseCounterHint'))}</div>
+  </div>`;
+}
+
 function wikiRow(it) {
   const open = WIKI_ST.open === it.key;
   let line = '', detail = '';
+
   if (WIKI_ST.tab === 'maa') {
-    line = `<span class="wk-name">${esc(it.name)}</span>
+    const ct = (it.counters || []).slice(0, 3).map(c => c.name).join('、');
+    line = `<span class="wk-name">${esc(it.name)}<small>${esc(it.nameEn || '')}</small></span>
       <span class="wk-tag">${esc(it.typeName || it.type)}</span>
-      <span class="wk-mini">${esc(T('wiki.damage'))} ${wnum(it.damage)} · ${esc(T('wiki.toughness'))} ${wnum(it.toughness)} · ${esc(T('wiki.stack'))} ${wnum(it.stack)}</span>`;
+      <span class="wk-mini">${esc(T('wiki.damage'))} ${wnum(it.damage)} · ${esc(T('wiki.toughness'))} ${wnum(it.toughness)} · ${esc(T('wiki.stack'))} ${wnum(it.stack)}</span>
+      ${ct ? `<span class="wk-ctr-mini">${esc(T('wiki.counterShort'))} ${esc(ct)}</span>` : ''}`;
     if (open) {
-      detail = `<div class="wk-stats">
+      detail = `${it.flavor ? `<div class="wk-flavor">${esc(it.flavor)}</div>` : ''}
+        <div class="wk-stats">
           ${wstat(T('wiki.damage'), wnum(it.damage))}
           ${wstat(T('wiki.toughness'), wnum(it.toughness))}
           ${wstat(T('wiki.pursuit'), wnum(it.pursuit))}
@@ -604,15 +641,17 @@ function wikiRow(it) {
           ${wstat(T('wiki.siege'), wnum(it.siege))}
           ${wstat(T('wiki.provision'), wnum(it.provision))}
         </div>
-        ${it.terrain && it.terrain.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.terrain'))}</div>
-          ${wikiChips(it.terrain, t => `<span class="wk-chip">${esc(t.name)}
-            <i>${t.damage ? '+' + t.damage : ''}${t.damage && t.toughness ? ' / ' : ''}${t.toughness ? '+' + t.toughness : ''}</i></span>`)}
+        ${(it.counters || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.countersTo'))}</div>
+          <div class="wk-chips">${it.counters.map(c => `<span class="wk-chip bad">${esc(c.name)} <i>×${wnum(c.mult)}</i></span>`).join('')}</div>
         </div>` : ''}
-        ${it.counters && it.counters.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.counters'))}</div>
-          ${wikiChips(it.counters, c => `<span class="wk-chip bad">${esc(c.name)} <i>×${wnum(c.mult)}</i></span>`)}
+        ${(it.counteredBy || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.counteredBy'))}</div>
+          <div class="wk-chips">${it.counteredBy.map(c => `<span class="wk-chip">${esc(c.name)}</span>`).join('')}</div>
         </div>` : ''}
-        ${it.winter && it.winter.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.winter'))}</div>
-          ${wikiChips(it.winter, t => `<span class="wk-chip">${esc(t.name)} <i>${t.damage ? '+' + t.damage : ''}${t.toughness ? ' / +' + t.toughness : ''}</i></span>`)}
+        ${(it.terrain || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.terrain'))}</div>
+          <div class="wk-chips">${it.terrain.map(t => `<span class="wk-chip">${esc(t.name)} ${wmods(t.mods)}</span>`).join('')}</div>
+        </div>` : ''}
+        ${(it.winter || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.winter'))}</div>
+          <div class="wk-chips">${it.winter.map(t => `<span class="wk-chip">${esc(t.name)} ${wmods(t.mods)}</span>`).join('')}</div>
         </div>` : ''}
         <div class="wk-foot">
           <span class="wk-src">${esc(T('wiki.source'))}: ${esc(it.src)}</span>
@@ -624,32 +663,43 @@ function wikiRow(it) {
       <span class="wk-tag">${esc((it.heritage || {}).name || '—')}</span>
       <span class="wk-mini">${esc((it.ethos || {}).name || '')} · ${esc(T('wiki.tradCount', { n: (it.traditions || []).length }))}</span>`;
     if (open) {
+      const trs = it.traditions || [];
       detail = `<div class="wk-pillars">
-          ${wpillar(T('wiki.ethos'), it.ethos)}
-          ${wpillar(T('wiki.heritage'), it.heritage)}
-          ${wpillar(T('wiki.language'), it.language)}
-          ${wpillar(T('wiki.martial'), it.martial)}
-          ${wpillar(T('wiki.head'), it.head)}
+          ${wpillar(T('wiki.ethos'), it.ethos, false)}
+          ${wpillar(T('wiki.heritage'), it.heritage, true)}
+          ${wpillar(T('wiki.language'), it.language, true)}
         </div>
-        ${(it.traditions || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.traditionsOf'))} (${it.traditions.length})</div>
-          <ul class="wk-trads">${it.traditions.map(t => `<li><b>${esc(t.name)}</b></li>`).join('')}</ul>
+        ${trs.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.traditionsOf'))} (${trs.length})</div>
+          <table class="wk-trad-table">
+            <tr><th>${esc(T('wiki.tradName'))}</th><th>${esc(T('wiki.tradDesc'))}</th></tr>
+            ${trs.map(t => `<tr>
+              <td><b>${esc(t.name)}</b>${t.dlc ? ` <em class="wk-dlc">${esc(T('wiki.dlcTag'))}</em>` : ''}</td>
+              <td>${esc(t.desc || '—')}</td></tr>`).join('')}
+          </table>
         </div>` : ''}
         ${(it.parents || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.parents'))}</div>
-          ${wikiChips(it.parents, p => `<span class="wk-chip">${esc(p.name)}</span>`)}
+          <div class="wk-chips">${it.parents.map(p => `<span class="wk-chip">${esc(p.name)}</span>`).join('')}</div>
         </div>` : ''}
         <div class="wk-foot">
           <button class="btn sm ghost" data-wiki="${esc(it.key)}">${esc(T('wiki.openWiki'))}</button>
         </div>`;
     }
   } else {
+    const ef = it.effects || [];
     line = `<span class="wk-name">${esc(it.name)}</span>
       <span class="wk-tag">${esc(it.cat)}</span>
       <span class="wk-mini wk-ellipsis">${esc(it.desc || '')}</span>`;
     if (open) {
       const own = wikiOwners()[it.key] || [];
-      detail = `<div class="wk-desc">${esc(it.desc || '—')}</div>
+      detail = `${ef.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.effects'))}</div>
+          <ul class="wk-eff">${ef.map(e => `<li>${esc(e)}</li>`).join('')}</ul>
+        </div>` : `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.effects'))}</div>
+          <div class="wk-pd">${esc(T('wiki.noEffects'))}</div></div>`}
+        <div class="wk-sec"><div class="wk-h">${esc(T('wiki.flavor'))}</div>
+          <div class="wk-desc">${esc(it.desc || '—')}</div>
+        </div>
         ${own.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.usedBy'))} (${own.length})</div>
-          ${wikiChips(own, n => `<span class="wk-chip">${esc(n)}</span>`)}
+          <div class="wk-chips">${own.map(n => `<span class="wk-chip">${esc(n)}</span>`).join('')}</div>
         </div>` : ''}
         <div class="wk-foot">
           <button class="btn sm ghost" data-wiki="${esc(it.key)}">${esc(T('wiki.openWiki'))}</button>
@@ -670,8 +720,7 @@ function paintWiki() {
     { id: 'traditions', icon: '✦', label: T('wiki.tabTraditions'), n: d.counts.traditions },
   ];
   const items = wikiItems();
-  const filters = wikiFilters();
-  const cats = [{ v: '', label: T('wiki.all'), n: null }].concat(filters);
+  const cats = [{ v: '', label: T('wiki.all'), n: null }].concat(wikiFilters());
 
   $('#view').innerHTML = `
     <div class="page-head"><div>
@@ -687,6 +736,8 @@ function paintWiki() {
       ${tabs.map(t => `<button class="wk-tab ${WIKI_ST.tab === t.id ? 'active' : ''}" data-tab="${t.id}">
         <i>${t.icon}</i><span>${esc(t.label)}</span><b>${t.n}</b></button>`).join('')}
     </div>
+
+    ${WIKI_ST.tab === 'maa' ? wikiCycleCard() : ''}
 
     <div class="wk-toolbar">
       <input class="inp wk-search" id="wkQ" value="${esc(WIKI_ST.q)}" placeholder="${esc(T('wiki.search'))}">

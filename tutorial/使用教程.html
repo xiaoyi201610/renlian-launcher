@@ -940,10 +940,22 @@ footer{
   <h3>三个标签页</h3>
   <table>
     <tr><th>标签</th><th>能查到什么</th></tr>
-    <tr><td><strong>⚔ 军队兵种</strong></td><td>伤害、坚韧、追击、掩护、规模、攻城、补给；展开还有地形加成、克制关系、冬季加成、来源文件</td></tr>
-    <tr><td><strong>🏛 文化</strong></td><td>文化精神、文化传承、语言、军事习俗、头衔继承（均带说明），该文化拥有的传统、源文化</td></tr>
-    <tr><td><strong>✦ 传统</strong></td><td>完整描述，外加「哪些文化拥有这项传统」</td></tr>
+    <tr><td><strong>⚔ 军队兵种</strong></td><td>伤害、坚韧、追击、掩护、规模、攻城、补给；展开还有简介、克制 / 被克制、地形加成、冬季加成、来源文件</td></tr>
+    <tr><td><strong>🏛 文化</strong></td><td>文化精神、文化传承、语言，该文化拥有的全部传统（含 DLC 传统，表格列出名称与说明）、源文化</td></tr>
+    <tr><td><strong>✦ 传统</strong></td><td>实际效果条目 + 简介，外加「哪些文化拥有这项传统」</td></tr>
   </table>
+
+  <h3>先看顶部那张「基础克制关系」</h3>
+  <p>军队兵种页最上面固定着一张克制速查表，就是游戏里的循环克制：</p>
+  <ul>
+    <li><strong>散兵</strong> 克 <strong>重步兵</strong></li>
+    <li><strong>重步兵</strong> 克 <strong>长枪兵</strong></li>
+    <li><strong>长枪兵</strong> 克 <strong>轻骑兵 / 重骑兵</strong></li>
+    <li><strong>轻骑兵 / 重骑兵</strong> 克 <strong>弓箭手</strong></li>
+    <li><strong>弓箭手</strong> 克 <strong>散兵</strong></li>
+  </ul>
+  <p>每个兵种展开后还会单独列出<strong>「克制（对其伤害提升）」</strong>和<strong>「被克制（受其压制）」</strong>，
+  列表行右侧也会直接标一个「克 XXX」，不用点开就能看到。</p>
 
   <h3>怎么查</h3>
   <ol class="steps">
@@ -963,6 +975,21 @@ footer{
     <li><strong>补给</strong> —— 这队兵消耗的补给量，军团补给吃紧时优先看它</li>
     <li><strong>克制</strong> —— 对某类兵种的伤害倍率，×1 为正常，低于 1 说明被压制</li>
   </ul>
+  <p>地形和冬季加成里的正负值有颜色区分：<strong>绿色是加成、红色是减益</strong>，
+  比如弓骑兵在丛林里会显示「伤害 −20 追击 −30」（红字），在草原则是「伤害 +20」（绿字）。
+  冬季等级也做了中文化：普通冬季 / 严寒冬季。</p>
+
+  <h3>文化和传统怎么读</h3>
+  <ul>
+    <li><strong>文化</strong>：展开后是「文化精神 / 文化传承 / 语言」三块，下面用<strong>表格</strong>列出这个文化的全部传统（名称 + 说明），
+      带 <strong>DLC</strong> 标记的是需要对应 DLC 才有的传统（例如「汉」文化的士大夫、兵法全是如此）</li>
+    <li><strong>传统</strong>：展开先给<strong>实际效果</strong>（如「授予家族成员头衔时获得威望」），再给简介文字，
+      最后列出「哪些文化拥有这项传统」</li>
+  </ul>
+  <div class="box tip">
+    <p>传统效果直接取自游戏脚本里的 parameters 与修正值，偶有一两条含引擎实时数值（如成功率随状态浮动），
+    会显示成 <code>+?%</code>，具体以游戏内为准。</p>
+  </div>
 
   <h3>「重建索引」什么时候点</h3>
   <p>百科数据会缓存（程序目录下的 <code>wiki_cache_*.json</code>），平时打开是秒开的。</p>
@@ -1287,7 +1314,7 @@ footer{
 </section>
 
 <footer>
-  人联启动器 v1.7<br>
+  人联启动器 v1.7.1<br>
   <span style="color:var(--gold)">反馈群：793826682　·　小黑盒：人联永不服输</span><br>
   <br>
   开源地址（源码全部公开，可自行审阅 / 编译）：<br>
