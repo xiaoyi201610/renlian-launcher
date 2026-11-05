@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.6';   // 与 make_release.py 的 VERSION 保持一致（1.6 正式版）
+const LAUNCHER_VERSION = '1.7';   // 与 make_release.py 的 VERSION 保持一致（1.7：新增百科）
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -472,12 +472,277 @@ function bindNav() {
   });
 }
 
+/* ---------------- 百科（军队 / 文化 / 传统） ---------------- */
+const WIKI_SITE = 'https://ck3.paradoxwikis.com/';
+const WIKI_ST = { data: null, owners: null, tab: 'maa', q: '', cat: '', open: '', force: false };
+
+/* 脚本键 → 可读英文标题（拿去 wiki 搜索用） */
+function wikiTitle(key) {
+  return String(key || '').split('_').filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+function wikiGoto(kind, key) {
+  const url = WIKI_SITE + 'index.php?search=' + encodeURIComponent(wikiTitle(key));
+  post('/api/url', { url });
+}
+function wnum(v) { return (v === null || v === undefined || v === '') ? '—' : v; }
+function wstat(label, val, unit) {
+  return `<div class="wk-stat"><span class="wk-k">${esc(label)}</span>
+    <span class="wk-v">${esc(String(val))}${unit ? `<small>${esc(unit)}</small>` : ''}</span></div>`;
+}
+function wpillar(label, p) {
+  if (!p || !p.name) return '';
+  return `<div class="wk-pillar"><span class="wk-k">${esc(label)}</span>
+    <span class="wk-pv">${esc(p.name)}</span>
+    ${p.desc ? `<div class="wk-pd">${esc(p.desc)}</div>` : ''}</div>`;
+}
+function wikiChips(items, fmt) {
+  return `<div class="wk-chips">${items.map(fmt).join('')}</div>`;
+}
+
+async function renderWiki() {
+  const view = $('#view');
+  const head = `<div class="page-head"><div>
+      <div class="page-title">${esc(T('wiki.title'))}</div>
+      <div class="page-sub">${esc(T('wiki.sub'))}</div>
+    </div></div>`;
+
+  if (!WIKI_ST.data) {
+    view.innerHTML = head + `<div class="card"><div class="wk-loading">
+      <span class="wk-spin"></span>${esc(T('wiki.building'))}</div></div>`;
+  }
+
+  let d = null;
+  try {
+    d = await api('/api/wiki' + (WIKI_ST.force ? '?refresh=1' : ''));
+  } catch (e) {
+    view.innerHTML = head + `<div class="card"><div class="empty">${esc(T('wiki.loadFailed'))}
+      <br><span style="color:var(--dim-2)">${esc(e.message)}</span></div></div>`;
+    return;
+  }
+  WIKI_ST.force = false;
+
+  if (!d.supported) {
+    view.innerHTML = head + `<div class="card"><div class="empty">${esc(T('wiki.unsupported'))}</div></div>`;
+    return;
+  }
+  if (!d.ok) {
+    view.innerHTML = head + `<div class="card"><div class="empty">${esc(d.error || T('wiki.loadFailed'))}</div></div>`;
+    return;
+  }
+
+  WIKI_ST.data = d;
+  WIKI_ST.owners = null;
+  WIKI_ST.open = '';
+  paintWiki();
+}
+
+function wikiOwners() {
+  if (WIKI_ST.owners) return WIKI_ST.owners;
+  const map = {};
+  (WIKI_ST.data.cultures || []).forEach(c => (c.traditions || []).forEach(t => {
+    (map[t.key] = map[t.key] || []).push(c.name);
+  }));
+  WIKI_ST.owners = map;
+  return map;
+}
+
+function wikiItems() {
+  const d = WIKI_ST.data, q = WIKI_ST.q.trim().toLowerCase(), cat = WIKI_ST.cat;
+  const hit = s => !q || String(s || '').toLowerCase().includes(q);
+  if (WIKI_ST.tab === 'maa') {
+    return (d.maa || []).filter(m =>
+      (!cat || m.type === cat) &&
+      (hit(m.name) || hit(m.key) || hit(m.typeName)));
+  }
+  if (WIKI_ST.tab === 'cultures') {
+    return (d.cultures || []).filter(c =>
+      (!cat || (c.heritage && c.heritage.key) === cat) &&
+      (hit(c.name) || hit(c.key) || hit(c.ethos && c.ethos.name) || hit(c.heritage && c.heritage.name)));
+  }
+  return (d.traditions || []).filter(t =>
+    (!cat || t.cat === cat) && (hit(t.name) || hit(t.key) || hit(t.desc)));
+}
+
+function wikiFilters() {
+  const d = WIKI_ST.data;
+  if (WIKI_ST.tab === 'maa') {
+    const list = (d.types || []).map(t => ({
+      v: t, label: (d.maa.find(m => m.type === t) || {}).typeName || t,
+      n: (d.maa || []).filter(m => m.type === t).length,
+    }));
+    return list;
+  }
+  if (WIKI_ST.tab === 'cultures') {
+    const seen = {};
+    (d.cultures || []).forEach(c => {
+      const h = c.heritage || {};
+      if (!h.key) return;
+      seen[h.key] = { v: h.key, label: h.name || h.key, n: (seen[h.key] ? seen[h.key].n : 0) + 1 };
+    });
+    return Object.values(seen).sort((a, b) => b.n - a.n);
+  }
+  return (d.tradCats || []).map(c => ({
+    v: c, label: c, n: (d.traditions || []).filter(t => t.cat === c).length,
+  }));
+}
+
+function wikiRow(it) {
+  const open = WIKI_ST.open === it.key;
+  let line = '', detail = '';
+  if (WIKI_ST.tab === 'maa') {
+    line = `<span class="wk-name">${esc(it.name)}</span>
+      <span class="wk-tag">${esc(it.typeName || it.type)}</span>
+      <span class="wk-mini">${esc(T('wiki.damage'))} ${wnum(it.damage)} · ${esc(T('wiki.toughness'))} ${wnum(it.toughness)} · ${esc(T('wiki.stack'))} ${wnum(it.stack)}</span>`;
+    if (open) {
+      detail = `<div class="wk-stats">
+          ${wstat(T('wiki.damage'), wnum(it.damage))}
+          ${wstat(T('wiki.toughness'), wnum(it.toughness))}
+          ${wstat(T('wiki.pursuit'), wnum(it.pursuit))}
+          ${wstat(T('wiki.screen'), wnum(it.screen))}
+          ${wstat(T('wiki.stack'), wnum(it.stack))}
+          ${wstat(T('wiki.siege'), wnum(it.siege))}
+          ${wstat(T('wiki.provision'), wnum(it.provision))}
+        </div>
+        ${it.terrain && it.terrain.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.terrain'))}</div>
+          ${wikiChips(it.terrain, t => `<span class="wk-chip">${esc(t.name)}
+            <i>${t.damage ? '+' + t.damage : ''}${t.damage && t.toughness ? ' / ' : ''}${t.toughness ? '+' + t.toughness : ''}</i></span>`)}
+        </div>` : ''}
+        ${it.counters && it.counters.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.counters'))}</div>
+          ${wikiChips(it.counters, c => `<span class="wk-chip bad">${esc(c.name)} <i>×${wnum(c.mult)}</i></span>`)}
+        </div>` : ''}
+        ${it.winter && it.winter.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.winter'))}</div>
+          ${wikiChips(it.winter, t => `<span class="wk-chip">${esc(t.name)} <i>${t.damage ? '+' + t.damage : ''}${t.toughness ? ' / +' + t.toughness : ''}</i></span>`)}
+        </div>` : ''}
+        <div class="wk-foot">
+          <span class="wk-src">${esc(T('wiki.source'))}: ${esc(it.src)}</span>
+          <button class="btn sm ghost" data-wiki="${esc(it.key)}">${esc(T('wiki.openWiki'))}</button>
+        </div>`;
+    }
+  } else if (WIKI_ST.tab === 'cultures') {
+    line = `<span class="wk-name">${esc(it.name)}</span>
+      <span class="wk-tag">${esc((it.heritage || {}).name || '—')}</span>
+      <span class="wk-mini">${esc((it.ethos || {}).name || '')} · ${esc(T('wiki.tradCount', { n: (it.traditions || []).length }))}</span>`;
+    if (open) {
+      detail = `<div class="wk-pillars">
+          ${wpillar(T('wiki.ethos'), it.ethos)}
+          ${wpillar(T('wiki.heritage'), it.heritage)}
+          ${wpillar(T('wiki.language'), it.language)}
+          ${wpillar(T('wiki.martial'), it.martial)}
+          ${wpillar(T('wiki.head'), it.head)}
+        </div>
+        ${(it.traditions || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.traditionsOf'))} (${it.traditions.length})</div>
+          <ul class="wk-trads">${it.traditions.map(t => `<li><b>${esc(t.name)}</b></li>`).join('')}</ul>
+        </div>` : ''}
+        ${(it.parents || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.parents'))}</div>
+          ${wikiChips(it.parents, p => `<span class="wk-chip">${esc(p.name)}</span>`)}
+        </div>` : ''}
+        <div class="wk-foot">
+          <button class="btn sm ghost" data-wiki="${esc(it.key)}">${esc(T('wiki.openWiki'))}</button>
+        </div>`;
+    }
+  } else {
+    line = `<span class="wk-name">${esc(it.name)}</span>
+      <span class="wk-tag">${esc(it.cat)}</span>
+      <span class="wk-mini wk-ellipsis">${esc(it.desc || '')}</span>`;
+    if (open) {
+      const own = wikiOwners()[it.key] || [];
+      detail = `<div class="wk-desc">${esc(it.desc || '—')}</div>
+        ${own.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.usedBy'))} (${own.length})</div>
+          ${wikiChips(own, n => `<span class="wk-chip">${esc(n)}</span>`)}
+        </div>` : ''}
+        <div class="wk-foot">
+          <button class="btn sm ghost" data-wiki="${esc(it.key)}">${esc(T('wiki.openWiki'))}</button>
+        </div>`;
+    }
+  }
+  return `<div class="wk-row ${open ? 'open' : ''}" data-k="${esc(it.key)}">
+    <div class="wk-line">${line}<span class="wk-arrow">▾</span></div>
+    ${open ? `<div class="wk-detail">${detail}</div>` : ''}
+  </div>`;
+}
+
+function paintWiki() {
+  const d = WIKI_ST.data;
+  const tabs = [
+    { id: 'maa', icon: '⚔', label: T('wiki.tabMaa'), n: d.counts.maa },
+    { id: 'cultures', icon: '🏛', label: T('wiki.tabCultures'), n: d.counts.cultures },
+    { id: 'traditions', icon: '✦', label: T('wiki.tabTraditions'), n: d.counts.traditions },
+  ];
+  const items = wikiItems();
+  const filters = wikiFilters();
+  const cats = [{ v: '', label: T('wiki.all'), n: null }].concat(filters);
+
+  $('#view').innerHTML = `
+    <div class="page-head"><div>
+      <div class="page-title">${esc(T('wiki.title'))}</div>
+      <div class="page-sub">${esc(T('wiki.sub'))}</div>
+    </div><div class="bar">
+      <button class="btn sm ghost" id="wkArmy">${esc(T('wiki.armyPage'))}</button>
+      <button class="btn sm ghost" id="wkCulture">${esc(T('wiki.culturePage'))}</button>
+      <button class="btn sm ghost" id="wkRefresh" title="${esc(T('wiki.refreshHint'))}">⟳ ${esc(T('wiki.refresh'))}</button>
+    </div></div>
+
+    <div class="wk-tabs">
+      ${tabs.map(t => `<button class="wk-tab ${WIKI_ST.tab === t.id ? 'active' : ''}" data-tab="${t.id}">
+        <i>${t.icon}</i><span>${esc(t.label)}</span><b>${t.n}</b></button>`).join('')}
+    </div>
+
+    <div class="wk-toolbar">
+      <input class="inp wk-search" id="wkQ" value="${esc(WIKI_ST.q)}" placeholder="${esc(T('wiki.search'))}">
+      <div class="wk-cats">
+        ${cats.map(c => `<button class="wk-cat ${WIKI_ST.cat === c.v ? 'active' : ''}" data-cat="${esc(c.v)}">
+          ${esc(c.label)}${c.n !== null ? `<b>${c.n}</b>` : ''}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="wk-count">${esc(T('wiki.found', { n: items.length }))}${
+      d.cached === false ? ` <span class="wk-new">${esc(T('wiki.justBuilt'))}</span>` : ''}</div>
+
+    <div class="wk-list" id="wkList">
+      ${items.length ? items.map(wikiRow).join('') : `<div class="empty">${esc(T('wiki.empty'))}</div>`}
+    </div>`;
+
+  $$('.wk-tab').forEach(b => b.onclick = () => {
+    WIKI_ST.tab = b.dataset.tab; WIKI_ST.cat = ''; WIKI_ST.open = ''; paintWiki();
+  });
+  $$('.wk-cat').forEach(b => b.onclick = () => {
+    WIKI_ST.cat = b.dataset.cat; WIKI_ST.open = ''; paintWiki();
+  });
+  const q = $('#wkQ');
+  if (q) {
+    q.oninput = () => {
+      WIKI_ST.q = q.value;
+      const cur = wikiItems();
+      $('#wkList').innerHTML = cur.length ? cur.map(wikiRow).join('')
+        : `<div class="empty">${esc(T('wiki.empty'))}</div>`;
+      const cnt = document.querySelector('.wk-count');
+      if (cnt) cnt.textContent = T('wiki.found', { n: cur.length });
+    };
+  }
+  $('#wkList').onclick = e => {
+    const btn = e.target.closest('[data-wiki]');
+    if (btn) { e.stopPropagation(); wikiGoto(WIKI_ST.tab, btn.dataset.wiki); return; }
+    const row = e.target.closest('.wk-row');
+    if (!row) return;
+    WIKI_ST.open = (WIKI_ST.open === row.dataset.k) ? '' : row.dataset.k;
+    paintWiki();
+  };
+  $('#wkRefresh').onclick = async () => {
+    WIKI_ST.force = true;
+    toast(T('wiki.rebuilding'), 'ok');
+    await renderWiki();
+  };
+  $('#wkArmy').onclick = () => post('/api/url', { url: WIKI_SITE + 'Army' });
+  $('#wkCulture').onclick = () => post('/api/url', { url: WIKI_SITE + 'Culture' });
+}
+
 const ROUTES = {
   home: renderHome, mods: renderMods, playsets: renderPlaysets,
   dlc: renderDlc, saves: renderSaves, workshop: renderWorkshop,
   tools: renderTools, diag: renderDiag, settings: renderSettings,
   gamedata: renderGameData, memory: renderMemory, sponsor: renderSponsor,
-  ach: renderAchievements, versions: renderVersions,
+  ach: renderAchievements, versions: renderVersions, wiki: renderWiki,
 };
 function route() {
   cleanupDrag();          // 切页面前先清掉拖拽残影

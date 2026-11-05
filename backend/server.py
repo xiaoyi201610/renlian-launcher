@@ -25,6 +25,7 @@ import achievements
 import diagnose
 import steamdlc
 import steambeta
+import wiki
 import windlg
 
 APP_DIR = core.APP_DIR
@@ -1074,6 +1075,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if p == "/api/gamedata":
                 self._json(api_gamedata())
+                return
+            if p == "/api/wiki":
+                # 百科：从游戏本体脚本 + 官方本地化抽取（离线、带缓存）
+                try:
+                    self._json(wiki.load(
+                        CTX.game,
+                        CTX.cfg.get("gameRoot") or "",
+                        CTX.cfg.get("uiLang") or "zh",
+                        force=q.get("refresh") == "1",
+                    ))
+                except Exception as ex:
+                    self._json({"ok": False, "supported": True,
+                                "error": "读取百科失败：%s" % ex})
                 return
             self._send(404, b"not found", "text/plain")
         except Exception:

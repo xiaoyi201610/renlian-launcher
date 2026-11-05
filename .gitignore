@@ -22,6 +22,7 @@ achievement_global_*.json
 dlc_data_*.json
 dlc_detail_cache.json
 dlc_meta_cache.json
+wiki_cache_*.json
 dlc-names-cn.json
 mod-aliases.json
 mod-collections.json

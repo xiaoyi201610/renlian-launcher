@@ -160,6 +160,7 @@ footer{
     <li><a href="#tools">文件目录</a></li>
     <li><a href="#gamedata">游戏文件</a></li>
     <li><a href="#versions">版本切换（多版本 / Steam）</a></li>
+    <li><a href="#wiki">百科（兵种 / 文化 / 传统）</a></li>
     <li><a href="#memory">内存管理</a></li>
     <li><a href="#diag">崩溃诊断</a></li>
     <li><a href="#settings">启动器设置</a></li>
@@ -924,8 +925,66 @@ footer{
 </section>
 
 <!-- ========== 11 ========== -->
+<section id="wiki">
+  <h2><span class="n">15</span>百科（兵种 / 文化 / 传统）</h2>
+
+  <p>侧边栏的「百科」页把最容易忘的三类数据做成了速查表：<strong>军队兵种</strong>、
+  <strong>文化</strong>、<strong>传统</strong>。全部<strong>离线</strong>可查，不用切浏览器、不用等网页加载。</p>
+
+  <div class="box tip">
+    <p>数据不是从网上抓的，而是直接读你<strong>游戏本体</strong>里的脚本和官方本地化
+    （<code>common/men_at_arms_types</code>、<code>common/culture</code>、<code>localization</code>）。
+    所以版本和你装的 DLC 完全一致，中文是官方译名，断网也能用。</p>
+  </div>
+
+  <h3>三个标签页</h3>
+  <table>
+    <tr><th>标签</th><th>能查到什么</th></tr>
+    <tr><td><strong>⚔ 军队兵种</strong></td><td>伤害、坚韧、追击、掩护、规模、攻城、补给；展开还有地形加成、克制关系、冬季加成、来源文件</td></tr>
+    <tr><td><strong>🏛 文化</strong></td><td>文化精神、文化传承、语言、军事习俗、头衔继承（均带说明），该文化拥有的传统、源文化</td></tr>
+    <tr><td><strong>✦ 传统</strong></td><td>完整描述，外加「哪些文化拥有这项传统」</td></tr>
+  </table>
+
+  <h3>怎么查</h3>
+  <ol class="steps">
+    <li>点顶部标签切换分类</li>
+    <li>下面那排小胶囊可以快速筛（兵种按类别、文化按传承、传统按组别），后面的数字是数量</li>
+    <li>搜索框支持中文名、英文键名和关键词（传统的描述文字也能搜到）</li>
+    <li>点任意一行展开详情，再点一次收起</li>
+  </ol>
+
+  <h3>兵种的数字怎么读</h3>
+  <p>以轻步兵为例：伤害 10 / 坚韧 16 / 追击 10 / 掩护 16 / 规模 100，
+  下面会列出「地形加成：森林 +4/+6」和「克制：重步兵 ×1」。</p>
+  <ul>
+    <li><strong>伤害 / 坚韧</strong> —— 战斗阶段的输出与抗打能力</li>
+    <li><strong>追击 / 掩护</strong> —— 打赢后追杀溃兵、打输时掩护撤退的能力</li>
+    <li><strong>规模</strong> —— 一队多少人</li>
+    <li><strong>补给</strong> —— 这队兵消耗的补给量，军团补给吃紧时优先看它</li>
+    <li><strong>克制</strong> —— 对某类兵种的伤害倍率，×1 为正常，低于 1 说明被压制</li>
+  </ul>
+
+  <h3>「重建索引」什么时候点</h3>
+  <p>百科数据会缓存（程序目录下的 <code>wiki_cache_*.json</code>），平时打开是秒开的。</p>
+  <ul>
+    <li><strong>游戏更新、装了新 DLC</strong> —— 缓存会自动失效重建，一般不用管</li>
+    <li>想立刻强制刷新 —— 点右上角<strong>重建索引</strong>（首次建立约 5 秒，之后又是秒开）</li>
+    <li>换了界面语言 —— 条目名会跟着换成该语言的官方译名（瑞典语没有游戏本地化，回落英文）</li>
+  </ul>
+
+  <h3>「在 Wiki 查看」</h3>
+  <p>详情底部的按钮会用默认浏览器打开 <code>ck3.paradoxwikis.com</code> 上对应的条目。
+  只做跳转、不抓内容——那个站点有防爬校验，程序直接抓会被拦，也没必要把整站搬进本地。</p>
+
+  <div class="box tip">
+    <p>目前只做了《十字军之王 III》的百科。切到群星 / 钢铁雄心等游戏时这一页会提示「暂未收录」，
+    不影响其他功能。</p>
+  </div>
+</section>
+
+<!-- ========== 12 ========== -->
 <section id="memory">
-  <h2><span class="n">15</span>内存管理</h2>
+  <h2><span class="n">16</span>内存管理</h2>
 
   <figure>
     <img src="img/08-内存管理.png" alt="内存管理">
@@ -971,7 +1030,7 @@ footer{
 
 <!-- ========== 11 ========== -->
 <section id="diag">
-  <h2><span class="n">16</span>崩溃诊断</h2>
+  <h2><span class="n">17</span>崩溃诊断</h2>
 
   <p>游戏闪退、卡死、白屏、进不去、模组冲突时，用这里收集一份诊断包，发给帮你排查的人。</p>
 
@@ -1024,7 +1083,7 @@ footer{
 
 <!-- ========== 12 ========== -->
 <section id="settings">
-  <h2><span class="n">17</span>启动器设置</h2>
+  <h2><span class="n">18</span>启动器设置</h2>
 
   <p>点左下角「启动器设置」。里面是这几块：</p>
 
@@ -1087,7 +1146,7 @@ footer{
 
 <!-- ========== 13 ========== -->
 <section id="faq">
-  <h2><span class="n">18</span>常见问题</h2>
+  <h2><span class="n">19</span>常见问题</h2>
 
   <h3>窗口没弹出来 / 一闪就没了</h3>
   <p>用压缩包里的 <code>启动器-调试.bat</code>（如果有）或直接在命令行跑 exe 看报错。常见原因是系统缺少 WebView2 运行时——Windows 10/11 一般自带，实在没有可以去微软官网装「WebView2 Runtime」。</p>
@@ -1163,6 +1222,14 @@ footer{
   <p>多半是没开 <code>-dataPath</code>。去「版本切换」页把「独立数据目录」开关打开，游戏才会去读你填的那个目录。</p>
   <p>另外新目录默认是空的，得先把要用的存档和模组复制进去。详见第 14 节。</p>
 
+  <h3>百科页第一次打开要等几秒 / 显示暂未收录</h3>
+  <ul>
+    <li><strong>第一次打开约 5 秒</strong> —— 正在读游戏本体的 30 万条本地化词条建立索引，建好后会缓存，之后秒开</li>
+    <li><strong>提示「暂未收录」</strong> —— 目前只做了《十字军之王 III》，切回 CK3 再看</li>
+    <li><strong>条目名变成英文</strong> —— 当前界面语言在游戏里没有对应本地化（例如瑞典语），回落英文是正常的</li>
+    <li><strong>游戏更新后数据对不上</strong> —— 点百科页右上角「重建索引」强制刷新一次</li>
+  </ul>
+
   <h3>快捷键</h3>
   <table>
     <tr><td><kbd>Ctrl</kbd> + <kbd>F</kbd></td><td>模组管理页聚焦搜索框</td></tr>
@@ -1172,7 +1239,7 @@ footer{
 
 <!-- ========== 14 ========== -->
 <section id="safe">
-  <h2><span class="n">19</span>数据安全</h2>
+  <h2><span class="n">20</span>数据安全</h2>
 
   <p>每次写入游戏数据前，都会自动把原文件备份到程序目录下的 <code>backups/</code>：</p>
   <ul>
@@ -1220,7 +1287,7 @@ footer{
 </section>
 
 <footer>
-  人联启动器 v1.6<br>
+  人联启动器 v1.7<br>
   <span style="color:var(--gold)">反馈群：793826682　·　小黑盒：人联永不服输</span><br>
   <br>
   开源地址（源码全部公开，可自行审阅 / 编译）：<br>

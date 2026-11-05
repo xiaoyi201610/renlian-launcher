@@ -1,7 +1,7 @@
 {
-  "version": "1.6",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6/renlian-launcher_v1.6.zip",
-  "notes": "1.6 正式版。此前的 1.6.1–1.6.12 均为 1.5 系列测试版，本版为 1.6 正式版：新增「版本切换」独立页（多版本配置 + 通过 Steam 切换游戏版本、全游戏分支抓取、自动关/重启 Steam）、版本配置独立数据目录与 -dataPath 隔离、文件夹选择定位当前目录，以及若干修复。",
+  "version": "1.7",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.7/renlian-launcher_v1.7.zip",
+  "notes": "1.7 新增「百科」页：军队兵种（111 种，伤害/坚韧/追击/掩护/规模/攻城/补给 + 地形加成 + 克制关系）、文化（244 个，含精神/传承/语言/军事习俗/头衔继承与传统）、传统（197 项，含完整描述与所属文化），支持搜索、分类筛选、展开详情，并可一键跳转官方 Wiki。数据离线读取游戏本体脚本与官方本地化，随游戏版本与 DLC 自动更新，界面语言跟随启动器。",
   "date": "2026-11-05",
   "size": "25.2MB"
 }
