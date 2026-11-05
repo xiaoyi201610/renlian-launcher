@@ -1,7 +1,7 @@
 {
-  "version": "1.6.7",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.7/renlian-launcher_v1.6.7.zip",
-  "notes": "版本自检去掉「更新检查地址」输入框：点「检查更新」即用内置地址自动比对，有更新会提示并可一键下载，用户无需再填地址。",
+  "version": "1.6.8",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.8/renlian-launcher_v1.6.8.zip",
+  "notes": "「版本切换」独立成侧边栏页面：版本配置（多版本）与通过 Steam 切换游戏版本都移到该页，不再放在启动器设置里。",
   "date": "2026-11-05",
   "size": "25.2MB"
 }

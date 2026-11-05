@@ -42,6 +42,8 @@ const I18N_DICT = {
     'nav.diag': '崩溃诊断',
     'nav.sponsor': '赞助人联',
     'nav.settings': '启动器设置',
+    'nav.versions': '版本切换',
+    'versions.sub': '管理多版本配置，并通过 Steam 切换游戏版本（每个版本可用独立数据目录）',
 
     // 顶部栏
     'top.switchGame': '点击切换游戏',
@@ -234,6 +236,8 @@ const I18N_DICT = {
     'nav.diag': 'Crash Diagnosis',
     'nav.sponsor': 'Support Us',
     'nav.settings': 'Settings',
+    'nav.versions': 'Versions',
+    'versions.sub': 'Manage version profiles and switch the game version via Steam (each version can use its own data folder)',
 
     'top.switchGame': 'Click to switch game',
     'top.currentPlayset': 'Current playset',
@@ -423,6 +427,8 @@ const I18N_DICT = {
     'nav.diag': 'Diagnostic de plantage',
     'nav.sponsor': 'Nous soutenir',
     'nav.settings': 'Paramètres',
+    'nav.versions': 'Versions',
+    'versions.sub': 'Gérez les profils de version et changez la version du jeu via Steam (chaque version peut avoir son propre dossier de données)',
 
     'top.switchGame': 'Cliquez pour changer de jeu',
     'top.currentPlayset': 'Ensemble actuel',
@@ -612,6 +618,8 @@ const I18N_DICT = {
     'nav.diag': 'Absturzdiagnose',
     'nav.sponsor': 'Uns unterstützen',
     'nav.settings': 'Einstellungen',
+    'nav.versions': 'Versionen',
+    'versions.sub': 'Versionsprofile verwalten und die Spielversion über Steam wechseln (jede Version kann einen eigenen Datenordner haben)',
 
     'top.switchGame': 'Zum Spielwechsel klicken',
     'top.currentPlayset': 'Aktuelles Spielset',
@@ -801,6 +809,8 @@ const I18N_DICT = {
     'nav.diag': 'Kraschdiagnos',
     'nav.sponsor': 'Stöd oss',
     'nav.settings': 'Inställningar',
+    'nav.versions': 'Versioner',
+    'versions.sub': 'Hantera versionsprofiler och byt spelversion via Steam (varje version kan ha en egen datamapp)',
 
     'top.switchGame': 'Klicka för att byta spel',
     'top.currentPlayset': 'Aktuellt spelset',
