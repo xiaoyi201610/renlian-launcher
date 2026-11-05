@@ -24,6 +24,7 @@ import ck3core as core
 import achievements
 import diagnose
 import steamdlc
+import steambeta
 import windlg
 
 APP_DIR = core.APP_DIR
@@ -1387,6 +1388,25 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(r); return
                 CTX.reload_cfg(); CTX.mods(force=True)
                 self._json({"ok": True, "state": api_state()}); return
+            if p == "/api/steam/branches":
+                # 读出 Steam 版本分支（betakey/描述/buildid）与当前分支
+                code = CTX.game
+                appid = core.GAME_DEFS.get(code, core.GAME_DEFS["ck3"]).get("appid", "1158310")
+                cur = steambeta.get_beta(appid)
+                self._json({
+                    "ok": True,
+                    "appid": appid,
+                    "current": cur.get("key") or "public",
+                    "manifest": cur.get("manifest") or "",
+                    "steamRunning": steambeta.steam_running(),
+                    "branches": steambeta.branches_or_fallback(appid),
+                }); return
+            if p == "/api/steam/switch":
+                # 切换 Steam 版本分支（写 appmanifest BetaKey；需 Steam 已退出）
+                code = CTX.game
+                appid = core.GAME_DEFS.get(code, core.GAME_DEFS["ck3"]).get("appid", "1158310")
+                r = steambeta.set_beta(appid, body.get("key") or "")
+                self._json(r); return
             if p == "/api/pick-dir":
                 self._json({"ok": True, "path": pick_directory(body.get("initial") or "")}); return
             if p == "/api/playset/save-as":

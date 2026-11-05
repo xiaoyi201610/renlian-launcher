@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.6.0';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.6.1';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -3276,6 +3276,19 @@ async function renderSettings() {
       </div>
     </div>
 
+    <!-- 通过 Steam 切换游戏版本 -->
+    <div class="card" id="steamCard">
+      <div class="card-title">◈ ${esc(T('settings.steamVersion'))}</div>
+      <div class="card-desc" style="margin-bottom:10px">${esc(T('settings.steamVersionDesc'))}</div>
+      <div class="form-row"><div class="lab">${esc(T('settings.steamCurrent'))}</div>
+        <div class="val"><span id="steamCur" style="font-size:13px;color:var(--gold-b);font-weight:600">…</span>
+        <button class="btn sm ghost" id="steamRefresh">${esc(T('settings.rescan'))}</button></div></div>
+      <div class="form-row"><div class="lab">${esc(T('settings.steamBranch'))}</div>
+        <div class="val"><select id="steamSel" style="flex:1;max-width:380px"><option>…</option></select>
+        <button class="btn sm" id="steamSwitch" disabled>${esc(T('settings.steamSwitch'))}</button></div></div>
+      <div class="hint" id="steamHint" style="margin-top:8px;line-height:1.6"></div>
+    </div>
+
     <!-- 数据位置 -->
     <div class="card">
       <div class="card-title">◈ ${esc(T('settings.dataLocation'))}</div>
@@ -3403,6 +3416,43 @@ async function renderSettings() {
     if (r.ok) { S.state = r.state; afterProfileChange(); toast(T('settings.profileAdded'), 'ok'); }
     else toast(r.error || T('common.failed'), 'err');
   };
+
+  // 通过 Steam 切换游戏版本：读分支 + 切换（写 BetaKey，需 Steam 已退出）
+  const steamSel = $('#steamSel');
+  if (steamSel) {
+    const loadSteam = async () => {
+      const cur = $('#steamCur'), hint = $('#steamHint'), sw = $('#steamSwitch');
+      cur.textContent = '…'; sw.disabled = true;
+      const r = await post('/api/steam/branches', {});
+      if (!r.ok) { cur.textContent = '—'; return; }
+      if (!r.manifest) {
+        cur.textContent = T('settings.steamNotManaged');
+        steamSel.innerHTML = ''; hint.textContent = '';
+        return;
+      }
+      const cb = (r.branches || []).find(b => b.key === r.current);
+      cur.textContent = r.current + (cb && cb.buildid ? '  ·  build ' + cb.buildid : '');
+      steamSel.innerHTML = (r.branches || []).map(b =>
+        `<option value="${esc(b.key)}" ${b.key === r.current ? 'selected' : ''}>${esc(b.key)}${b.desc ? ' — ' + esc(b.desc) : ''}</option>`).join('');
+      if (r.steamRunning) {
+        hint.innerHTML = '<span style="color:var(--danger,#e24b4a)">' + esc(T('settings.steamRunningWarn')) + '</span>';
+        sw.disabled = true;
+      } else {
+        hint.textContent = T('settings.steamCloseHint');
+        sw.disabled = false;
+      }
+    };
+    loadSteam();
+    $('#steamRefresh').onclick = loadSteam;
+    $('#steamSwitch').onclick = async () => {
+      const key = steamSel.value;
+      if (!key) return;
+      if (!confirm(T('settings.steamSwitchConfirm', { v: key }))) return;
+      const r = await post('/api/steam/switch', { key });
+      if (r.ok) { toast(T('settings.steamSwitched', { v: key }), 'ok'); loadSteam(); }
+      else toast(r.error || T('common.failed'), 'err');
+    };
+  }
 
   $('#cVerSync').onclick = () => {
     $('#cVer').value = st.version || '';

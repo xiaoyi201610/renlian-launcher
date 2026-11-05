@@ -15,6 +15,7 @@ a = Analysis(
         'ck3core',                 # backend/ck3core.py
         'diagnose',                # backend/diagnose.py（崩溃诊断收集）
         'steamdlc',                # backend/steamdlc.py（向 Steam 查 DLC 授权）
+        'steambeta',               # backend/steambeta.py（Steam 版本分支读写）
         'dlc_meta',                # backend/dlc_meta.py（DLC 发布日期/大小）
         'dlc_cn',                  # backend/dlc_cn.py（DLC 中文名对照，全游戏离线）
         'windlg',                  # backend/windlg.py（原生文件对话框）
