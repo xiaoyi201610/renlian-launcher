@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.6.11';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.6.12';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -3259,6 +3259,7 @@ async function renderVersions() {
           <span style="font-size:12px;color:var(--dim);min-width:60px">${esc(T('settings.profDir'))}</span>
           <input class="inp ver-pf-dir" data-pf="${esc(p.id)}" data-f="dir" id="pfdir_${esc(p.id)}" value="${esc(p.userDir || '')}" placeholder="${esc(T('settings.profDirPh'))}" style="flex:1">
           <button class="btn sm ghost" data-pick="pfdir_${esc(p.id)}">${esc(T('common.browse'))}</button>
+          <button class="btn sm ghost" data-openpf="pfdir_${esc(p.id)}">${esc(T('common.open'))}</button>
         </div>
       </div>`).join('');
     $$('#verProfileList [data-pfact]').forEach(b => b.onclick = async () => {
@@ -3295,6 +3296,16 @@ async function renderVersions() {
     const id = b.dataset.pick, inp = $('#' + id);
     const r = await post('/api/pick-dir', { initial: inp ? inp.value : '' });
     if (r && r.path && inp) inp.value = r.path;
+  });
+
+  // 版本行的「打开」按钮：像「打开 MOD 目录」一样，直接在资源管理器打开该数据目录
+  $$('#verProfileList [data-openpf]').forEach(b => b.onclick = () => {
+    const inp = $('#' + b.dataset.openpf);
+    const p = inp ? inp.value.trim() : '';
+    if (!p) { toast('该版本还没有数据目录，请先填写或点「浏览」选择', 'err'); return; }
+    post('/api/open', { path: p }).then(r => {
+      if (r && r.ok === false) toast(T('common.failed') + '：' + p, 'err');
+    }).catch(() => toast(T('common.failed'), 'err'));
   });
 
   // 多版本「数据隔离」说明 + 一键开/关 -dataPath

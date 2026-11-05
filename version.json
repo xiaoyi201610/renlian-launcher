@@ -1,7 +1,7 @@
 {
-  "version": "1.6.11",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.11/renlian-launcher_v1.6.11.zip",
-  "notes": "修复文件夹选择框不定位当前目录：64 位下 SendMessageW 的指针参数被截断导致 BFFM_SETSELECTION 失效；现已声明 64 位参数类型，选择框会从当前输入目录（或最近存在的上级目录）打开。",
+  "version": "1.6.12",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.6.12/renlian-launcher_v1.6.12.zip",
+  "notes": "版本配置的数据目录新增「打开」按钮：像「打开 MOD 目录」一样直接在资源管理器打开该数据目录（保留「浏览」用于修改路径）。",
   "date": "2026-11-05",
   "size": "25.2MB"
 }
