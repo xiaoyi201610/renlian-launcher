@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 11                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 15                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 目录名（相对 gameRoot）
 D_MAA = os.path.join("common", "men_at_arms_types")
@@ -38,6 +38,21 @@ D_TRAD = os.path.join("common", "culture", "traditions")
 D_PILLAR = os.path.join("common", "culture", "pillars")
 D_LOC = "localization"
 D_SV = os.path.join("common", "script_values")   # 脚本值：效果里 ScriptValue('x') 的真实数字
+D_RELIGION = os.path.join("common", "religion", "religion_types")
+D_TENET = os.path.join("common", "religion", "tenet_types")
+D_DOCTRINE = os.path.join("common", "religion", "doctrine_types")
+D_INNOV = os.path.join("common", "culture", "innovations")
+
+# 百科分类注册表：以后加新分类，写一个 _collect_xxx() 并在这里登记即可
+CATEGORIES = [
+    {"id": "maa", "dir": D_MAA, "collect": "_collect_maa"},
+    {"id": "cultures", "dir": D_CULT, "collect": "_collect_cultures"},
+    {"id": "traditions", "dir": D_TRAD, "collect": "_collect_traditions"},
+    {"id": "religions", "dir": D_RELIGION, "collect": "_collect_religions"},
+    {"id": "tenets", "dir": D_TENET, "collect": "_collect_tenets"},
+    {"id": "doctrines", "dir": D_DOCTRINE, "collect": "_collect_doctrines"},
+    {"id": "innovations", "dir": D_INNOV, "collect": "_collect_innovations"},
+]
 
 # 目前只有 CK3 有对应脚本结构；其他游戏返回 supported=false
 SUPPORTED_GAMES = {"ck3"}
@@ -359,6 +374,8 @@ def _clean(s: str) -> str:
     s = s.replace("\\n", " ")
     s = _MARK_PAT.sub("", s)
     s = _ICON_PAT.sub("", s)
+    s = re.sub(r"@[A-Za-z0-9_]+!?", "", s)   # @piety_icon! / @government_type_x! 这类内联标记
+    s = re.sub(r"\[[^\[\]]{1,80}\]", "", s)   # 剩下的脚本路径引用，如 [ROOT.Faith.XXX]
     s = re.sub(r"[ \t]{2,}", " ", s)
     return s.strip()
 
@@ -662,6 +679,137 @@ def _collect_traditions(game_root: str, loc: dict) -> tuple:
     return items, mapping
 
 
+# ---------------------------------------------------------------- 扩展百科（通用条目）
+
+def _generic_effects(body: str, loc: dict, prefixes=()) -> list:
+    """从 parameters / special_parameters / 修正块里抽效果文案。
+
+    `parameters` 有两种写法：裸标识符列表 或 `k = v`，都要能读。
+    """
+    eff = []
+    for blk in ("parameters", "special_parameters"):
+        pb = _sub(body, blk)
+        if not pb:
+            continue
+        if "=" in pb:
+            pairs, keys = _pairs(pb), list(_pairs(pb).keys())
+        else:
+            pairs, keys = {}, _list(pb)
+        for p in keys:
+            txt = None
+            for pre in prefixes:
+                txt = loc.get(pre + p)
+                if txt:
+                    break
+            if txt:
+                eff.append(txt)
+            else:
+                v = pairs.get(p)
+                if v and re.fullmatch(r"-?\d+(?:\.\d+)?", v):
+                    nm = PARTNER_NAMES.get(p) or MODIFIER_NAMES.get(p) or loc.get(p)
+                    if nm:
+                        eff.append("%s %s" % (nm, v))
+    for blk in ("character_modifier", "personal_tenet_modifier", "culture_modifier"):
+        mb = _sub(body, blk)
+        if not mb:
+            continue
+        for k, v in _pairs(mb).items():
+            nm = loc.get(k) or MODIFIER_NAMES.get(k)
+            if nm:
+                eff.append("%s %s" % (nm, _fmt_num(v)))
+    seen, out = set(), []
+    for e in eff:
+        e = e.strip()
+        if e and e not in seen:
+            seen.add(e)
+            out.append(e)
+    return out
+
+
+def _entry(key, name, desc, cat_key, cat_label, attrs=None, effects=None, links=None):
+    return {
+        "key": key, "name": name, "desc": desc,
+        "cat": cat_label or "", "catKey": cat_key or "",
+        "attrs": attrs or [], "effects": effects or [], "links": links or [],
+    }
+
+
+def _collect_religions(game_root: str, loc: dict, doc_names: dict) -> list:
+    out = []
+    for f in sorted(glob.glob(os.path.join(game_root, D_RELIGION, "*.txt"))):
+        for key, body in _top_blocks(_read(f)):
+            fam = ""
+            rd = _sub(body, "religion_details")
+            if rd:
+                fam = _val(rd, "family") or ""
+            docs = re.findall(r"^\tdoctrine\s*=\s*([a-z_0-9]+)", body, re.M)
+            # 去重保序
+            docs = list(dict.fromkeys(docs))
+            out.append(_entry(
+                key, loc.get(key) or key, loc.get(key + "_desc") or "",
+                fam, loc.get(fam) or fam or "其他",
+                attrs=[{"label": "教义", "value": "%d 项" % len(docs)}],
+                links=[doc_names.get(d) or d for d in docs],
+            ))
+    out.sort(key=lambda x: x["name"])
+    return out
+
+
+def _collect_tenets(game_root: str, loc: dict) -> list:
+    out = []
+    for f in sorted(glob.glob(os.path.join(game_root, D_TENET, "*.txt"))):
+        for key, body in _top_blocks(_read(f)):
+            dlc = _val(body, "requires_dlc_flag") or ""
+            cat = "需 DLC" if dlc else "通用"
+            out.append(_entry(
+                key, loc.get(key + "_name") or loc.get(key) or _title(key),
+                loc.get(key + "_desc") or "",
+                "dlc" if dlc else "base", cat,
+                effects=_generic_effects(body, loc,
+                                         ("doctrine_parameter_", "culture_parameter_", "tenet_parameter_")),
+            ))
+    out.sort(key=lambda x: x["name"])
+    return out
+
+
+def _collect_doctrines(game_root: str, loc: dict) -> list:
+    out = []
+    for f in sorted(glob.glob(os.path.join(game_root, D_DOCTRINE, "*.txt"))):
+        for key, body in _top_blocks(_read(f)):
+            g = _val(body, "doctrine_group_type") or ""
+            gname = loc.get(g + "_name") or loc.get(g) or g or "其他"
+            out.append(_entry(
+                key, loc.get(key + "_name") or loc.get(key) or _title(key),
+                loc.get(key + "_desc") or "",
+                g, gname,
+                effects=_generic_effects(body, loc, ("doctrine_parameter_", "culture_parameter_")),
+            ))
+    out.sort(key=lambda x: (x["cat"], x["name"]))
+    return out
+
+
+def _collect_innovations(game_root: str, loc: dict) -> list:
+    out = []
+    for f in sorted(glob.glob(os.path.join(game_root, D_INNOV, "*.txt"))):
+        for key, body in _top_blocks(_read(f)):
+            era = _val(body, "culture_era") or ""
+            grp = _val(body, "group") or ""
+            skill = _val(body, "skill") or ""
+            attrs = []
+            for label, v in (("类别", grp), ("相关能力", skill)):
+                nm = loc.get(v) or (v if v else "")
+                if nm:
+                    attrs.append({"label": label, "value": nm})
+            out.append(_entry(
+                key, loc.get(key) or key, loc.get(key + "_desc") or "",
+                era, loc.get(era) or era or "其他",
+                attrs=attrs,
+                effects=_generic_effects(body, loc, ("culture_parameter_",)),
+            ))
+    out.sort(key=lambda x: (x["cat"], x["name"]))
+    return out
+
+
 # ---------------------------------------------------------------- 缓存与入口
 
 def _sig(paths) -> str:
@@ -696,7 +844,10 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
     game = (game or "ck3").lower()
     if game not in SUPPORTED_GAMES:
         return {"ok": True, "supported": False, "game": game, "maa": [], "cultures": [],
-                "traditions": [], "counts": {"maa": 0, "cultures": 0, "traditions": 0}}
+                "traditions": [], "religions": [], "tenets": [], "doctrines": [],
+                "innovations": [], "counterCycle": [], "typesInfo": [],
+                "counts": {"maa": 0, "cultures": 0, "traditions": 0,
+                           "religions": 0, "tenets": 0, "doctrines": 0, "innovations": 0}}
 
     game_root = _scripts_root(game_root)
     if not game_root or not os.path.isdir(os.path.join(game_root, D_MAA)):
@@ -704,7 +855,8 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
                 "error": "没找到游戏本体目录（common/men_at_arms_types），请在设置里确认游戏根目录"}
 
     loc_lang = LANG_MAP.get((ui_lang or "zh").lower(), "simp_chinese")
-    dirs = [os.path.join(game_root, d) for d in (D_MAA, D_CULT, D_TRAD, D_SV)]
+    dirs = [os.path.join(game_root, d) for d in
+            (D_MAA, D_CULT, D_TRAD, D_SV, D_RELIGION, D_TENET, D_DOCTRINE, D_INNOV)]
     loc_dir = os.path.join(game_root, D_LOC, loc_lang)
     dirs.append(loc_dir)
     sig = _sig(dirs)
@@ -779,6 +931,40 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
         for key in raw_trads:
             needed.update((key, key + "_name", key + "_desc"))
 
+        # 扩展百科：宗教 / 信条 / 教义 / 革新
+        for d, suffixes in ((D_RELIGION, ("", "_desc")),
+                            (D_TENET, ("_name", "_desc")),
+                            (D_DOCTRINE, ("_name", "_desc")),
+                            (D_INNOV, ("", "_desc"))):
+            for fp in glob.glob(os.path.join(game_root, d, "*.txt")):
+                for k, body in _top_blocks(_read(fp)):
+                    for suf in suffixes:
+                        needed.add(k + suf)
+                    # 分类字段
+                    for fld in ("doctrine_group_type", "culture_era", "group", "skill"):
+                        v = _val(body, fld)
+                        if v:
+                            needed.update((v, v + "_name", "game_concept_" + v))
+                    rd = _sub(body, "religion_details")
+                    if rd:
+                        fam = _val(rd, "family")
+                        if fam:
+                            needed.update((fam, fam + "_name"))
+                    # 效果参数（各前缀都试）
+                    for blk in ("parameters", "special_parameters", "character_modifier",
+                                "personal_tenet_modifier", "culture_modifier"):
+                        inner = _sub(body, blk)
+                        if not inner:
+                            continue
+                        ps = (list(_pairs(inner).keys()) if "=" in inner else _list(inner))
+                        for p in ps:
+                            needed.update((p, "culture_parameter_" + p,
+                                           "doctrine_parameter_" + p,
+                                           "tenet_parameter_" + p))
+                    # 宗教引用的教义名
+                    for dk in re.findall(r"^\tdoctrine\s*=\s*([a-z_0-9]+)", body, re.M):
+                        needed.update((dk, dk + "_name"))
+
         raw = _scan_loc(loc_dir, needed)
 
         # 引用展开：译名/效果里会引用 `$键$`、`[概念|E]`、`[GetTrait('x')]`，
@@ -799,6 +985,11 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
         traditions, trad_map = _collect_traditions(game_root, loc)
         maa = _collect_maa(game_root, loc, loc_lang)
         cultures = _collect_cultures(game_root, loc, trad_map)
+        doctrines = _collect_doctrines(game_root, loc)
+        doc_names = {d["key"]: d["name"] for d in doctrines}
+        religions = _collect_religions(game_root, loc, doc_names)
+        tenets = _collect_tenets(game_root, loc)
+        innovations = _collect_innovations(game_root, loc)
 
         # 3) 克制关系：闭环 + 每个兵种的「被谁克制」
         tname = {}
@@ -828,7 +1019,15 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
             "maa": maa,
             "cultures": cultures,
             "traditions": traditions,
-            "counts": {"maa": len(maa), "cultures": len(cultures), "traditions": len(traditions)},
+            "religions": religions,
+            "tenets": tenets,
+            "doctrines": doctrines,
+            "innovations": innovations,
+            "counts": {
+                "maa": len(maa), "cultures": len(cultures), "traditions": len(traditions),
+                "religions": len(religions), "tenets": len(tenets),
+                "doctrines": len(doctrines), "innovations": len(innovations),
+            },
             "buildMs": int((time.time() - t0) * 1000),
             "types": sorted({m["type"] for m in maa if m["type"]}),
             "typesInfo": types_info,

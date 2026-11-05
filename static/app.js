@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7.1';   // 与 make_release.py 的 VERSION 保持一致（1.7：新增百科；1.7.1：百科修正）
+const LAUNCHER_VERSION = '1.7';   // 与 make_release.py 的 VERSION 保持一致（1.7 正式版：百科）
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -475,6 +475,7 @@ function bindNav() {
 /* ---------------- 百科（军队 / 文化 / 传统） ---------------- */
 const WIKI_SITE = 'https://ck3.paradoxwikis.com/';
 const WIKI_ST = { data: null, owners: null, tab: 'maa', q: '', cat: '', open: '', force: false };
+const WIKI_GENERIC = ['religions', 'tenets', 'doctrines', 'innovations'];
 const WK_LABEL = { damage: 'wiki.damage', toughness: 'wiki.toughness', pursuit: 'wiki.pursuit', screen: 'wiki.screen' };
 
 /* 脚本键 → 可读英文标题（拿去 wiki 搜索用） */
@@ -572,6 +573,12 @@ function wikiItems() {
       (!cat || (c.heritage && c.heritage.key) === cat) &&
       (hit(c.name) || hit(c.key) || hit(c.ethos && c.ethos.name) || hit(c.heritage && c.heritage.name)));
   }
+  if (WIKI_GENERIC.indexOf(WIKI_ST.tab) >= 0) {
+    return (d[WIKI_ST.tab] || []).filter(x =>
+      (!cat || x.catKey === cat) &&
+      (hit(x.name) || hit(x.key) || hit(x.desc) || hit(x.cat) ||
+       (x.effects || []).some(hit) || (x.links || []).some(hit)));
+  }
   return (d.traditions || []).filter(t =>
     (!cat || t.cat === cat) &&
     (hit(t.name) || hit(t.key) || hit(t.desc) || (t.effects || []).some(hit)));
@@ -591,12 +598,21 @@ function wikiFilters() {
     });
     return Object.values(seen).sort((a, b) => b.n - a.n);
   }
+  if (WIKI_GENERIC.indexOf(WIKI_ST.tab) >= 0) {
+    const seen = {};
+    (d[WIKI_ST.tab] || []).forEach(x => {
+      const k = x.catKey || '_';
+      if (!seen[k]) seen[k] = { v: k, label: x.cat || T('wiki.all'), n: 0 };
+      seen[k].n += 1;
+    });
+    return Object.values(seen).sort((a, b) => b.n - a.n);
+  }
   return (d.tradCats || []).map(c => ({
     v: c, label: c, n: (d.traditions || []).filter(t => t.cat === c).length,
   }));
 }
 
-/* 顶部基础克制闭环卡片 */
+/* 顶部基础克制闭环：环形图（节点 + 顺时针箭头） */
 function wikiCycleCard() {
   const cyc = WIKI_ST.data.counterCycle || [];
   if (!cyc.length) return '';
@@ -607,16 +623,50 @@ function wikiCycleCard() {
     if (!(k in idx)) { idx[k] = rows.length; rows.push({ from: c.from, to: [c.to] }); }
     else rows[idx[k]].to.push(c.to);
   });
+  if (rows.length < 5) return '';
+  const label = i => rows[i] ? rows[i].from.name : '';
+  const arch = rows.find(r => r.from.key === 'archers');
+  const archLabel = arch ? arch.from.name : label(3);
+  const nodes = [
+    { x: 210, y: 46, t: label(0) },                                  // 散兵
+    { x: 352, y: 116, t: label(1) },                                   // 重步兵
+    { x: 296, y: 222, t: label(2) },                                   // 长枪兵
+    { x: 124, y: 222, t: (rows[2].to || []).map(o => o.name).join(' / ') || label(3) }, // 轻/重骑兵
+    { x: 68, y: 116, t: archLabel },                                   // 弓箭手
+  ];
+  const r = 38;
+  const edges = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i], b = nodes[(i + 1) % nodes.length];
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    edges.push(`<line x1="${(a.x + ux * r).toFixed(1)}" y1="${(a.y + uy * r).toFixed(1)}"
+      x2="${(b.x - ux * (r + 9)).toFixed(1)}" y2="${(b.y - uy * (r + 9)).toFixed(1)}"
+      class="wk-cyc-line" marker-end="url(#wkArr)"/>`);
+  }
   return `<div class="card wk-cycle">
     <div class="card-title">⚔ ${esc(T('wiki.baseCounter'))}</div>
-    <div class="wk-cyc">
-      ${rows.map(r => `<div class="wk-cyc-row">
-        <span class="wk-cnode">${esc(r.from.name)}</span>
-        <span class="wk-carrow">➜</span>
-        <span class="wk-ctarget">${r.to.map(t => `<span class="wk-cnode win">${esc(t.name)}</span>`).join('')}</span>
-      </div>`).join('')}
+    <div class="wk-cycle-body">
+      <svg class="wk-cycsv" viewBox="0 0 420 268" role="img" aria-label="${esc(T('wiki.baseCounter'))}">
+        <defs><marker id="wkArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6"
+          orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--gold-b)"/></marker></defs>
+        ${edges.join('')}
+        ${nodes.map(n => {
+          const parts = n.t.split(' / ');
+          const txt = parts.length > 1
+            ? `<text x="${n.x}" y="${n.y - 3}" text-anchor="middle" class="wk-cyc-text small">
+                 ${parts.map((p, i) => `<tspan x="${n.x}" dy="${i === 0 ? 0 : 15}">${esc(p)}</tspan>`).join('')}</text>`
+            : `<text x="${n.x}" y="${n.y + 4}" text-anchor="middle" class="wk-cyc-text">${esc(n.t)}</text>`;
+          return `<g><circle cx="${n.x}" cy="${n.y}" r="${r}" class="wk-cyc-circle"/>${txt}</g>`;
+        }).join('')}
+      </svg>
+      <div class="wk-cycle-note">
+        <div class="wk-hint">${esc(T('wiki.baseCounterHint'))}</div>
+        <div class="wk-cyc-legend">
+          ${rows.map(rw => `<div><b>${esc(rw.from.name)}</b> ➜ ${rw.to.map(o => esc(o.name)).join(' / ')}</div>`).join('')}
+        </div>
+      </div>
     </div>
-    <div class="wk-hint">${esc(T('wiki.baseCounterHint'))}</div>
   </div>`;
 }
 
@@ -687,6 +737,28 @@ function wikiRow(it) {
           <button class="btn sm ghost" data-wiki="${esc(it.key)}">${esc(T('wiki.openWiki'))}</button>
         </div>`;
     }
+  } else if (WIKI_GENERIC.indexOf(WIKI_ST.tab) >= 0) {
+    /* 宗教 / 信条 / 教义 / 革新：统一条目结构 */
+    const ef = it.effects || [], links = it.links || [], attrs = it.attrs || [];
+    line = `<span class="wk-name">${esc(it.name)}<small>${esc(wikiTitle(it.key))}</small></span>
+      <span class="wk-tag">${esc(it.cat || T('wiki.all'))}</span>
+      <span class="wk-mini wk-ellipsis">${esc(it.desc || (ef[0] || ''))}</span>`;
+    if (open) {
+      detail = `${attrs.length ? `<div class="wk-stats">
+          ${attrs.map(a => wstat(esc(a.label), esc(a.value))).join('')}
+        </div>` : ''}
+        ${it.desc ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.flavor'))}</div>
+          <div class="wk-desc">${esc(it.desc)}</div></div>` : ''}
+        ${ef.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.effects'))} (${ef.length})</div>
+          <ul class="wk-eff">${ef.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+        ${links.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.linked'))} (${links.length})</div>
+          <div class="wk-chips">${links.map(n => `<span class="wk-chip">${esc(n)}</span>`).join('')}</div>
+        </div>` : ''}
+        <div class="wk-foot">
+          <span class="wk-src">${esc(it.cat || '')}</span>
+          <button class="btn sm ghost" data-wiki="${esc(it.key)}">${esc(T('wiki.openWiki'))}</button>
+        </div>`;
+    }
   } else {
     const ef = it.effects || [];
     line = `<span class="wk-name">${esc(it.name)}</span>
@@ -721,9 +793,15 @@ function paintWiki() {
     { id: 'maa', icon: '⚔', label: T('wiki.tabMaa'), n: d.counts.maa },
     { id: 'cultures', icon: '🏛', label: T('wiki.tabCultures'), n: d.counts.cultures },
     { id: 'traditions', icon: '✦', label: T('wiki.tabTraditions'), n: d.counts.traditions },
+    { id: 'religions', icon: '☪', label: T('wiki.tabReligions'), n: d.counts.religions },
+    { id: 'tenets', icon: '✧', label: T('wiki.tabTenets'), n: d.counts.tenets },
+    { id: 'doctrines', icon: '⚖', label: T('wiki.tabDoctrines'), n: d.counts.doctrines },
+    { id: 'innovations', icon: '⚙', label: T('wiki.tabInnovations'), n: d.counts.innovations },
   ];
   const items = wikiItems();
   const cats = [{ v: '', label: T('wiki.all'), n: null }].concat(wikiFilters());
+  // 分类太多了（教义有 49 组）就换成下拉，别把胶囊铺满屏
+  const useSelect = cats.length > 14;
 
   $('#view').innerHTML = `
     <div class="page-head"><div>
@@ -744,10 +822,12 @@ function paintWiki() {
 
     <div class="wk-toolbar">
       <input class="inp wk-search" id="wkQ" value="${esc(WIKI_ST.q)}" placeholder="${esc(T('wiki.search'))}">
-      <div class="wk-cats">
-        ${cats.map(c => `<button class="wk-cat ${WIKI_ST.cat === c.v ? 'active' : ''}" data-cat="${esc(c.v)}">
-          ${esc(c.label)}${c.n !== null ? `<b>${c.n}</b>` : ''}</button>`).join('')}
-      </div>
+      ${useSelect
+        ? `<select class="inp wk-sel" id="wkSel">${cats.map(c =>
+            `<option value="${esc(c.v)}" ${WIKI_ST.cat === c.v ? 'selected' : ''}>${esc(c.label)}${c.n !== null ? ' (' + c.n + ')' : ''}</option>`).join('')}</select>`
+        : `<div class="wk-cats">${cats.map(c =>
+            `<button class="wk-cat ${WIKI_ST.cat === c.v ? 'active' : ''}" data-cat="${esc(c.v)}">
+              ${esc(c.label)}${c.n !== null ? `<b>${c.n}</b>` : ''}</button>`).join('')}</div>`}
     </div>
 
     <div class="wk-count">${esc(T('wiki.found', { n: items.length }))}${
@@ -763,6 +843,8 @@ function paintWiki() {
   $$('.wk-cat').forEach(b => b.onclick = () => {
     WIKI_ST.cat = b.dataset.cat; WIKI_ST.open = ''; paintWiki();
   });
+  const sel = $('#wkSel');
+  if (sel) sel.onchange = () => { WIKI_ST.cat = sel.value; WIKI_ST.open = ''; paintWiki(); };
   const q = $('#wkQ');
   if (q) {
     q.oninput = () => {
