@@ -1,6 +1,6 @@
 {
   "version": "1.6.0",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/tag/v1.6",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/raw/master/release-assets/renlian-launcher_v1.6.0.zip",
   "notes": "新增「多版本切换 / 文件独立」：每个游戏（CK3、群星、钢铁雄心4、欧陆风云4/5、维多利亚等）可建立各自的版本配置，每个版本拥有独立的游戏本体、创意工坊、用户数据目录，切换版本即切换一整套模组/存档/设置，互不干扰；运行时通过 -dataPath 实现真正的目录隔离。顶栏下拉一键切换，设置页管理版本配置（新增/设为当前/改名/改版本号/删除）。",
   "date": "2026-11-05",
   "size": "25.2MB"
