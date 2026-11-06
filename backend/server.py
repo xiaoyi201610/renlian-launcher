@@ -1693,6 +1693,18 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def handle_error(self, request, client_address):
+        """连接被对端强关不算错误。
+
+        百科首屏一次要几十个图标请求，用户切页或关窗口时这些请求会被中断，
+        socketserver 默认会把整段 traceback 打到控制台，看着像出事了，其实没有。
+        """
+        import sys
+        et = sys.exc_info()[0]
+        if et and issubclass(et, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
+
 
 def serve(port: int = 0) -> tuple[ThreadingHTTPServer, int]:
     httpd = Server(("127.0.0.1", port), Handler)

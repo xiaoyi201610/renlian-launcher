@@ -199,14 +199,19 @@ def main():
     time.sleep(0.4)
 
     # 等图标转换队列消化完（首次每个 DDS 要转一次 PNG）
+    # 注意：只有进入视口的节点才会被赋值 src（懒加载），所以分母是「带 src 的」，
+    # 不是全部节点。剩下的要平移过去才会加载，这是设计如此。
     for _ in range(30):
         n = c.js("Array.from(document.querySelectorAll('.fx-node img')).filter(i=>i.src&&i.complete&&i.naturalWidth>0).length")
         want = c.js("document.querySelectorAll('.fx-node img[src]').length")
         if n and want and int(n) >= int(want) and int(n) > 30:
             break
         time.sleep(0.5)
-    print("图标已加载:", c.js("Array.from(document.querySelectorAll('.fx-node img')).filter(i=>i.src&&i.complete&&i.naturalWidth>0).length"),
-          "/", c.js("document.querySelectorAll('.fx-node img').length"))
+    vis = c.js("document.querySelectorAll('.fx-node img[src]').length")
+    got = c.js("Array.from(document.querySelectorAll('.fx-node img')).filter(i=>i.src&&i.complete&&i.naturalWidth>0).length")
+    allimg = c.js("document.querySelectorAll('.fx-node img').length")
+    print("图标：节点共 %s 个图位，当前视口内 %s 个，已加载 %s 个（其余平移过去才加载）"
+          % (allimg, vis, got))
 
     # 截图
     out = sys.argv[2] if len(sys.argv) > 2 else "hoi4-shot.png"
