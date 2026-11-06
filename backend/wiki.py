@@ -31,6 +31,7 @@ except Exception:                       # 单独跑测试时兜底
 
 import stellaris                        # 群星百科（独立模块，按 game 分派）
 import hoi4                             # 钢铁雄心百科（独立模块，按 game 分派）
+import vic3                             # 维多利亚 3 百科（独立模块，按 game 分派）
 
 WIKI_VER = 36                            # 解析逻辑变更时 +1，强制重建旧缓存
 
@@ -106,7 +107,7 @@ CATEGORIES = [
 ]
 
 # 目前只有 CK3 与群星有对应脚本结构；其他游戏返回 supported=false
-SUPPORTED_GAMES = {"ck3", "stellaris", "hoi4"}
+SUPPORTED_GAMES = {"ck3", "stellaris", "hoi4", "vic3"}
 
 # 界面语言 → 游戏本地化目录
 LANG_MAP = {
@@ -1668,6 +1669,14 @@ def focus_icon(game_root: str, gfx_name: str) -> str:
         return ""
 
 
+def law_icon(game_root: str, name: str) -> str:
+    """维多利亚 3 法律图标 PNG 路径（DDS 按需转换 + 缓存）。"""
+    try:
+        return vic3.law_icon_png(game_root, name)
+    except Exception:
+        return ""
+
+
 def _scripts_root(game_root: str) -> str:
     """CK3 的脚本在 `<安装目录>\\game\\` 下；也兼容直接指向该层的情况。"""
     game_root = (game_root or "").strip()
@@ -1688,6 +1697,9 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
     if game == "hoi4":
         # 钢铁雄心：理念 / 顾问与特质 / 国策树，结构与上面两个都不一样
         return hoi4.load(game_root, ui_lang, force)
+    if game == "vic3":
+        # 维多利亚 3：目前做了法律（法律组 / 意识形态立场 / 接受度等级）
+        return vic3.load(game_root, ui_lang, force)
     if game not in SUPPORTED_GAMES:
         return {"ok": True, "supported": False, "game": game, "maa": [], "cultures": [],
                 "traditions": [], "religions": [], "tenets": [], "doctrines": [],

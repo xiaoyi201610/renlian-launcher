@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7.0.1';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.7.0.4';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -483,6 +483,7 @@ function wikiSite() {
   const g = WIKI_ST.data && WIKI_ST.data.game;
   if (g === 'stellaris') return 'https://stellaris.paradoxwikis.com/';
   if (g === 'hoi4') return 'https://hoi4.paradoxwikis.com/';
+  if (g === 'vic3') return 'https://vic3.paradoxwikis.com/';
   return WIKI_SITE;
 }
 
@@ -494,20 +495,25 @@ function wkTab(id) {
 }
 function wkLayout() { return wkTab().layout || 'generic'; }
 
-/* tab 标题：群星由后端给中文/英文名；CK3 走界面语言表 */
+/* tab 标题：群星由后端给中文/英文名；CK3 与维多利亚 3 走界面语言表 */
 const WK_TAB_KEY = {
   maa: 'wiki.tabMaa', cultures: 'wiki.tabCultures', traditions: 'wiki.tabTraditions',
   religions: 'wiki.tabReligions', tenets: 'wiki.tabTenets', doctrines: 'wiki.tabDoctrines',
-  innovations: 'wiki.tabInnovations',
+  innovations: 'wiki.tabInnovations', laws: 'wiki.tabLaws',
 };
 function wkTabLabel(t) {
+  if (WK_TAB_KEY[t.id]) return T(WK_TAB_KEY[t.id]);
   if (t.label) return t.label;
-  return WK_TAB_KEY[t.id] ? T(WK_TAB_KEY[t.id]) : t.id;
+  return t.id;
 }
 
 /* 脚本键 → 可读英文标题（拿去 wiki 搜索用） */
 function wikiTitle(key) {
-  return String(key || '').split('_').filter(Boolean)
+  let k = String(key || '');
+  /* 维多利亚 3 的 key 是 law_xxx，wiki 上的条目名不带前缀（法律条目分散在
+     Power structure / Economy / Human rights 三个子页里，用名字搜更准） */
+  if (WIKI_ST.data && WIKI_ST.data.game === 'vic3') k = k.replace(/^law_/, '');
+  return k.split('_').filter(Boolean)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 function wikiGoto(kind, key) {
@@ -670,6 +676,15 @@ function wikiFilters() {
     return out;
   }
   if (layout === 'generic') {
+    /* 维多利亚 3 的法律有一条整组的顺序（权力结构 → 经济 → 人权，组内按进步性），
+       直接照后端给的组清单来，别按条数排 */
+    if ((d.lawGroups || []).length) {
+      return d.lawGroups.map(g => ({
+        v: g.key,
+        label: (g.areaLabel ? g.areaLabel + ' · ' : '') + g.label,
+        n: g.n,
+      }));
+    }
     const seen = {};
     (d[tid] || []).forEach(x => {
       const k = x.catKey || '_';
@@ -737,6 +752,61 @@ function wikiCycleCard() {
       </div>
     </div>
   </div>`;
+}
+
+/* 进步性刻度：0 在中点，负值向左（保守）、正值向右（进步），满格 ±100 */
+function wikiProg(v) {
+  const p = Math.max(-100, Math.min(100, v | 0));
+  const half = Math.abs(p) / 2;
+  const fill = p < 0
+    ? `<i class="neg" style="right:50%;width:${half}%"></i>`
+    : `<i class="pos" style="left:50%;width:${half}%"></i>`;
+  return `<div class="wk-prog">
+    <span class="wk-prog-k">${esc(T('wiki.prog'))}</span>
+    <span class="wk-prog-track"><span class="wk-prog-mid"></span>${fill}</span>
+    <span class="wk-prog-v">${esc(wikiProgLabel(p))}</span>
+  </div>`;
+}
+function wikiProgLabel(v) {
+  if (v <= -60) return T('wiki.progVeryCons') + ' ' + v;
+  if (v < 0) return T('wiki.progCons') + ' ' + v;
+  if (v === 0) return T('wiki.progNeutral');
+  if (v < 60) return T('wiki.progLib') + ' +' + v;
+  return T('wiki.progVeryLib') + ' +' + v;
+}
+
+/* 附加区块：后端按 kind 下发，前端只管画
+   list = 文字列表、chips = 标签、tiers = 分档列表、stances = 意识形态立场（按档位分行） */
+function wikiSecs(secs) {
+  if (!secs || !secs.length) return '';
+  return secs.map(s => {
+    const n = s.n || (s.items ? s.items.length : 0);
+    let body = '';
+    if (s.kind === 'chips') {
+      body = `<div class="wk-chips">${(s.items || []).map(x =>
+        `<span class="wk-chip ${s.bad ? 'bad' : ''}">${esc(x)}</span>`).join('')}</div>`;
+    } else if (s.kind === 'tiers') {
+      body = `<div class="wk-tiers">${(s.items || []).map(t => `<div class="wk-tier">
+        <span class="wk-tier-k">${esc(t.label)}</span>
+        <ul class="wk-eff tight">${(t.effects || []).map(e => `<li>${esc(e)}</li>`).join('')}</ul>
+      </div>`).join('')}</div>`;
+    } else if (s.kind === 'stances') {
+      body = `<div class="wk-stances">${(s.groups || []).map(g => `<div class="wk-stance st${g.v}">
+        <span class="wk-stance-k">${esc(g.label)}<b>${g.n}</b></span>
+        <div class="wk-chips">${(g.items || []).map(x => {
+          /* 同名意识形态来自不同文件时会合并成一条，来源与「沿用父法」放进 title */
+          const tip = [];
+          if (x.inh) tip.push(T('wiki.stanceInherit'));
+          if (x.dup > 1 && (x.srcs || []).length) tip.push(x.srcs.join(' / '));
+          return `<span class="wk-chip"${tip.length ? ` title="${esc(tip.join(' · '))}"` : ''}>${esc(x.name)}</span>`;
+        }).join('')}</div>
+      </div>`).join('')}</div>`;
+    } else {
+      body = `<ul class="wk-eff">${(s.items || []).map(e => `<li>${esc(e)}</li>`).join('')}</ul>`;
+    }
+    return `<div class="wk-sec"><div class="wk-h">${esc(s.label)}${n ? ` (${n})` : ''}</div>
+      ${s.hint ? `<div class="wk-hint">${esc(s.hint)}</div>` : ''}${body}</div>`;
+  }).join('');
 }
 
 function wikiRow(it) {
@@ -813,27 +883,35 @@ function wikiRow(it) {
         </div>`;
     }
   } else if (layout === 'generic') {
-    /* 宗教 / 信条 / 教义 / 革新（CK3）与群星全部十类：统一条目结构 */
+    /* 宗教 / 信条 / 教义 / 革新（CK3）、群星十类、钢铁雄心理念与顾问、维多利亚 3 法律：
+       统一条目结构，靠各自的附加字段（icon / prog / secs）决定要不要多画点东西 */
     const ef = it.effects || [], links = it.links || [], attrs = it.attrs || [];
     /* 信条分两个槽位：核心信条（全信徒）与个人教义（只对本人），效果要分开展示 */
     const isTenet = WIKI_ST.tab === 'tenets';
     const effTitle = isTenet ? T('wiki.coreEffects') : T('wiki.effects');
     const pf = it.personal || [];
     /* 群星的名字本身就是中文，再挂一行英文字号反而挤；CK3 保留英文副标题便于对照 wiki */
-    const isSl = (WIKI_ST.data && ['stellaris', 'hoi4'].includes(WIKI_ST.data.game));
-    line = `<span class="wk-name">${esc(it.name)}${isSl ? '' : `<small>${esc(wikiTitle(it.key))}</small>`}</span>
+    const isSl = (WIKI_ST.data && ['stellaris', 'hoi4', 'vic3'].includes(WIKI_ST.data.game));
+    /* 维多利亚 3 的法律图标：DDS 由后端转 PNG，按需懒加载 */
+    const ico = it.icon
+      ? `<span class="wk-ico"><img loading="lazy" src="/api/wiki/law-icon?n=${encodeURIComponent(it.icon)}" alt=""
+           onerror="this.parentNode.classList.add('wk-ico-na');this.remove()"></span>`
+      : '';
+    line = `${ico}<span class="wk-name">${esc(it.name)}${isSl ? '' : `<small>${esc(wikiTitle(it.key))}</small>`}</span>
       <span class="wk-tag">${esc(it.cat || T('wiki.all'))}</span>
       <span class="wk-mini wk-ellipsis">${esc(it.desc || (ef[0] || ''))}</span>`;
     if (open) {
-      detail = `${attrs.length ? `<div class="wk-stats">
+      detail = `${typeof it.prog === 'number' ? wikiProg(it.prog) : ''}
+        ${attrs.length ? `<div class="wk-stats">
           ${attrs.map(a => wstat(esc(a.label), esc(a.value))).join('')}
         </div>` : ''}
         ${it.desc ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.flavor'))}</div>
           <div class="wk-desc">${esc(it.desc)}</div></div>` : ''}
         ${ef.length ? `<div class="wk-sec"><div class="wk-h">${esc(effTitle)} (${ef.length})</div>
           <ul class="wk-eff">${ef.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`
-          : `<div class="wk-sec"><div class="wk-h">${esc(effTitle)}</div>
-          <div class="wk-pd">${esc(T('wiki.noEffects'))}</div></div>`}
+          : (it.secs && it.secs.length ? '' : `<div class="wk-sec"><div class="wk-h">${esc(effTitle)}</div>
+          <div class="wk-pd">${esc(T('wiki.noEffects'))}</div></div>`)}
+        ${wikiSecs(it.secs)}
         ${pf.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.personalEffects'))} (${pf.length})</div>
           <ul class="wk-eff">${pf.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`
           : (it.personalSameAsCore ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.personalEffects'))}</div>

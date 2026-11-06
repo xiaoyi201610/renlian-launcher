@@ -901,7 +901,10 @@ class Handler(BaseHTTPRequestHandler):
             ct = "text/css; charset=utf-8"
         elif path.lower().endswith(".html"):
             ct = "text/html; charset=utf-8"
-        self._send(200, data, ct, {"Cache-Control": "no-cache"})
+        # 代码与样式用 no-store：升级启动器后同名文件会命中旧缓存，
+        # 导致改了 CSS / JS 却看不到效果（本地服务，重下的代价可以忽略）
+        cc = "no-store" if path.lower().endswith((".js", ".css", ".html")) else "no-cache"
+        self._send(200, data, ct, {"Cache-Control": cc})
 
     def _path_ok(self, p: str) -> bool:
         """限制可读取的绝对路径范围，避免任意文件读取。"""
@@ -1101,6 +1104,20 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/wiki/focus-icon":
                 # 国策图标：从游戏 DDS 转 PNG（转一次缓存），浏览器显示不了 DDS
                 img = wiki.focus_icon(CTX.cfg.get("gameRoot") or "", q.get("n") or "")
+                if img and os.path.isfile(img):
+                    try:
+                        with open(img, "rb") as f:
+                            data = f.read()
+                        self._send(200, data, "image/png",
+                                   {"Cache-Control": "public, max-age=604800"})
+                    except Exception:
+                        self._send(404, b"", "image/png")
+                else:
+                    self._send(404, b"", "image/png")
+                return
+            if p == "/api/wiki/law-icon":
+                # 维多利亚 3 法律图标：同样是 DDS → PNG，转一次后走浏览器缓存
+                img = wiki.law_icon(CTX.cfg.get("gameRoot") or "", q.get("n") or "")
                 if img and os.path.isfile(img):
                     try:
                         with open(img, "rb") as f:

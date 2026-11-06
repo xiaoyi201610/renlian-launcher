@@ -18,6 +18,7 @@ __pycache__/
 .edge-profile/
 achievement_icons/
 hoi4_focus_icons/
+vic3_law_icons/
 achievement_data_*.json
 achievement_global_*.json
 dlc_data_*.json
@@ -39,6 +40,7 @@ mod-source-overrides.json
 /sl-*.png
 /hoi4-shot.png
 /hoi4-*.png
+/vic3-*.png
 /innov-*.png
 /tenet-shot.png
 .workbuddy/
