@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 24                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 25                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 目录名（相对 gameRoot）
 D_MAA = os.path.join("common", "men_at_arms_types")
@@ -825,6 +825,38 @@ def _fmt_num(v: str) -> str:
     return "%+g" % f
 
 
+# 修正块里有些值不是数字，而是 script_values 的名字（例：taiga_travel_danger = taiga_low_danger_reduction）
+_SV_NUM = {}
+_DANGER_KEY = re.compile(r"^[a-z_]+_travel_danger$")
+
+
+def _mod_number(v: str):
+    """修正值：数字直接返回；脚本值名从 _SV_NUM 查真实数字。"""
+    if not v:
+        return None
+    v = v.strip()
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", v):
+        return float(v)
+    x = _SV_NUM.get(v)
+    return float(x) if x is not None else None
+
+
+def _mod_line(k: str, v: str, nm: str, zh: bool = True) -> str:
+    """把「针叶林危险」这种半截文案补成「降低针叶林地形危险 19 点」。"""
+    val = _mod_number(v)
+    if val is None:
+        return nm.strip()                     # yes / 触发器标记，只留名字
+    if _DANGER_KEY.match(k):
+        terrain = (nm.replace("危险", "").strip() if zh
+                   else re.sub(r"\s*Danger\s*$", "", nm, flags=re.I).strip())
+        amount = int(round(abs(val)))
+        down = val < 0
+        if zh:
+            return "%s%s地形危险 %d 点" % ("降低" if down else "提高", terrain, amount)
+        return "%s %s travel danger by %d" % ("Reduce" if down else "Increase", terrain, amount)
+    return "%s %s" % (nm, _fmt_num(str(val)))
+
+
 def _collect_script_values(game_root: str) -> dict:
     """读 `common/script_values/*.txt` 的顶层常量，用来还原效果里的 ScriptValue('x')。"""
     out, refs = {}, {}
@@ -878,7 +910,7 @@ def _trad_effects(body: str, loc: dict, zh: bool = True) -> list:
                 continue
             nm = loc.get(k) or _mn(MODIFIER_NAMES, k, zh)
             if nm:
-                eff.append("%s %s" % (nm, _fmt_num(v)))
+                eff.append(_mod_line(k, v, nm, zh))
     # 去重保序
     seen, out = set(), []
     for e in eff:
@@ -1056,7 +1088,7 @@ def _generic_effects(body: str, loc: dict, prefixes=(), zh=True) -> list:
         for k, v in _pairs(mb).items():
             nm = loc.get(k) or _mn(MODIFIER_NAMES, k, zh)
             if nm:
-                eff.append("%s %s" % (nm, _fmt_num(v)))
+                eff.append(_mod_line(k, v, nm, zh))
     seen, out = set(), []
     for e in eff:
         e = e.strip()
@@ -1341,9 +1373,11 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
         sv = _collect_script_values(game_root)
         loc = _finalize(raw, sv, zh)
 
-        # 2) 正式抽取
-        traditions, trad_map = _collect_traditions(game_root, loc, zh)
+        # 2) 正式抽取（脚本值表要先算，效果里会引用）
+        global _SV_NUM
         costs = _load_cost_values(game_root)
+        _SV_NUM = costs
+        traditions, trad_map = _collect_traditions(game_root, loc, zh)
         maa = _collect_maa(game_root, loc, loc_lang, costs)
         cultures = _collect_cultures(game_root, loc, trad_map)
         doctrines = _collect_doctrines(game_root, loc, zh)

@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7';   // 与 make_release.py 的 VERSION 保持一致（1.7 正式版：百科）
+const LAUNCHER_VERSION = '1.7百科测试';   // 与 make_release.py 的 VERSION 保持一致（测试版：打包给群友用，未上传 Gitee）
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
