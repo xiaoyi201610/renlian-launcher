@@ -757,6 +757,10 @@ function wikiRow(it) {
   } else if (WIKI_GENERIC.indexOf(WIKI_ST.tab) >= 0) {
     /* 宗教 / 信条 / 教义 / 革新：统一条目结构 */
     const ef = it.effects || [], links = it.links || [], attrs = it.attrs || [];
+    /* 信条分两个槽位：核心信条（全信徒）与个人教义（只对本人），效果要分开展示 */
+    const isTenet = WIKI_ST.tab === 'tenets';
+    const effTitle = isTenet ? T('wiki.coreEffects') : T('wiki.effects');
+    const pf = it.personal || [];
     line = `<span class="wk-name">${esc(it.name)}<small>${esc(wikiTitle(it.key))}</small></span>
       <span class="wk-tag">${esc(it.cat || T('wiki.all'))}</span>
       <span class="wk-mini wk-ellipsis">${esc(it.desc || (ef[0] || ''))}</span>`;
@@ -766,10 +770,14 @@ function wikiRow(it) {
         </div>` : ''}
         ${it.desc ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.flavor'))}</div>
           <div class="wk-desc">${esc(it.desc)}</div></div>` : ''}
-        ${ef.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.effects'))} (${ef.length})</div>
+        ${ef.length ? `<div class="wk-sec"><div class="wk-h">${esc(effTitle)} (${ef.length})</div>
           <ul class="wk-eff">${ef.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`
-          : `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.effects'))}</div>
+          : `<div class="wk-sec"><div class="wk-h">${esc(effTitle)}</div>
           <div class="wk-pd">${esc(T('wiki.noEffects'))}</div></div>`}
+        ${pf.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.personalEffects'))} (${pf.length})</div>
+          <ul class="wk-eff">${pf.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`
+          : (it.personalSameAsCore ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.personalEffects'))}</div>
+          <div class="wk-pd">${esc(T('wiki.personalSameAsCore'))}</div></div>` : '')}
         ${links.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.linked'))} (${links.length})</div>
           <div class="wk-chips">${links.map(n => `<span class="wk-chip">${esc(n)}</span>`).join('')}</div>
         </div>` : ''}

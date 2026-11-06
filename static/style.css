@@ -1131,7 +1131,7 @@ body{
 .wk-row.open .wk-arrow{transform:rotate(180deg);color:var(--gold-b)}
 
 .wk-detail{padding:2px 12px 12px;border-top:1px dashed var(--line-soft)}
-.wk-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:10px}
+.wk-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:8px;margin-top:10px}
 .wk-stat{background:var(--bg);border:1px solid var(--line-soft);border-radius:8px;padding:7px 9px;display:flex;flex-direction:column;gap:2px}
 .wk-k{font-size:11px;color:var(--dim-2)}
 .wk-v{font-size:15px;color:var(--fg);font-weight:600}

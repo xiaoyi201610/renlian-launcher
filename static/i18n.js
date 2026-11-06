@@ -264,6 +264,9 @@ const I18N_DICT = {
     'wiki.counteredBy': '被克制（受其压制）',
     'wiki.effects': '效果',
     'wiki.noEffects': '该传统没有可直接展示的数值效果，具体以游戏内为准。',
+    'wiki.coreEffects': '核心效果',
+    'wiki.personalEffects': '个人教义效果',
+    'wiki.personalSameAsCore': '该信条的个人教义效果与核心效果相同。',
 
     'wiki.sortType': '分类顺序',
 
@@ -529,6 +532,9 @@ const I18N_DICT = {
     'wiki.counteredBy': 'Countered by',
     'wiki.effects': 'Effects',
     'wiki.noEffects': 'No numeric effects to display; check in game for details.',
+    'wiki.coreEffects': 'Core effects',
+    'wiki.personalEffects': 'Personal tenet effects',
+    'wiki.personalSameAsCore': 'Its personal tenet effects are identical to the core effects.',
 
     'wiki.sortType': 'By type',
 
@@ -794,6 +800,9 @@ const I18N_DICT = {
     'wiki.counteredBy': 'Contré par',
     'wiki.effects': 'Effets',
     'wiki.noEffects': 'Aucun effet chiffré à afficher ; voir en jeu.',
+    'wiki.coreEffects': 'Effets principaux',
+    'wiki.personalEffects': 'Effets de précepte personnel',
+    'wiki.personalSameAsCore': 'Ses effets personnels sont identiques aux effets principaux.',
 
     'wiki.sortType': 'Par type',
 
@@ -1059,6 +1068,9 @@ const I18N_DICT = {
     'wiki.counteredBy': 'Gekontert von',
     'wiki.effects': 'Effekte',
     'wiki.noEffects': 'Keine numerischen Effekte vorhanden; Details im Spiel.',
+    'wiki.coreEffects': 'Kerneffekte',
+    'wiki.personalEffects': 'Effekte als persönlicher Glaubenssatz',
+    'wiki.personalSameAsCore': 'Die persönlichen Effekte entsprechen den Kerneffekten.',
 
     'wiki.sortType': 'Nach Typ',
 
@@ -1324,6 +1336,9 @@ const I18N_DICT = {
     'wiki.counteredBy': 'Kontras av',
     'wiki.effects': 'Effekter',
     'wiki.noEffects': 'Inga siffereffekter att visa; se i spelet.',
+    'wiki.coreEffects': 'Grundeffekter',
+    'wiki.personalEffects': 'Effekter som personlig trosprincip',
+    'wiki.personalSameAsCore': 'Dess personliga effekter är samma som grundeffekterna.',
 
     'wiki.sortType': 'Efter typ',
 

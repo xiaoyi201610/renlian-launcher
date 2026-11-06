@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 30                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 33                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 勋号兵种（any_accolade）里 accolade_attribute_level 的 type 取值全集：
 # 部分是 _attribute 后缀的勋号属性键（在 accolades 本地化里有中文名），
@@ -189,6 +189,75 @@ MODIFIER_NAMES = {
     "mercenary_count_mult": ("雇佣兵数量","Mercenary count"),
     "building_slot_add": ("建筑槽位","Building slots"),
     "epidemic_resistance": ("瘟疫抗性","Epidemic resistance"),
+    # ---- 个人信条（personal_tenet_modifier）用到的修饰器 ----
+    "advantage": ("优势","Advantage"),
+    "artifact_decay_reduction_mult": ("宝物腐坏减缓","Artifact decay reduction"),
+    "build_speed": ("建造速度","Build speed"),
+    "character_spiritual_fulfillment_gain_mult": ("灵性满足获取","Spiritual fulfillment gain"),
+    "character_travel_safety": ("旅行安全","Travel safety"),
+    "character_travel_speed": ("旅行速度","Travel speed"),
+    "controlled_province_advantage": ("控制领地优势","Controlled province advantage"),
+    "county_opinion_add": ("伯爵领好感","County opinion"),
+    "courtier_and_guest_opinion": ("廷臣与宾客好感","Courtier and guest opinion"),
+    "desert_mountains_construction_gold_cost": ("沙漠山地建造花费","Desert mountains construction cost"),
+    "desert_mountains_travel_danger": ("沙漠山地危险","Desert mountains danger"),
+    "different_faith_opinion": ("异信仰好感","Different faith opinion"),
+    "diplomacy": ("外交","Diplomacy"),
+    "diplomacy_per_piety_level": ("每级虔诚外交","Diplomacy per piety level"),
+    "domain_limit": ("直辖领上限","Domain limit"),
+    "dread_decay_mult": ("恐惧衰减","Dread decay"),
+    "dread_gain_mult": ("恐惧获取","Dread gain"),
+    "dynasty_opinion": ("王朝好感","Dynasty opinion"),
+    "enemy_hostile_scheme_success_chance_add": ("敌方敌对计谋成功率","Enemy hostile scheme success chance"),
+    "enemy_hostile_scheme_success_chance_max_add": ("敌方敌对计谋最大成功率","Enemy hostile scheme max success chance"),
+    "enemy_scheme_secrecy_add": ("敌方计谋隐秘","Enemy scheme secrecy"),
+    "fertility": ("生育力","Fertility"),
+    "health": ("健康","Health"),
+    "hills_construction_gold_cost": ("丘陵建造花费","Hills construction cost"),
+    "holy_order_hire_cost_mult": ("圣战骑士团雇佣花费","Holy order hire cost"),
+    "intrigue": ("谋略","Intrigue"),
+    "knight_effectiveness_per_dread": ("每点恐惧骑士战斗力","Knight effectiveness per dread"),
+    "learn_language_scheme_phase_duration_add": ("学习语言计谋阶段时长","Learn language scheme phase duration"),
+    "levy_reinforcement_rate": ("征召兵补充率","Levy reinforcement rate"),
+    "levy_reinforcement_rate_same_faith": ("同信仰征召兵补充率","Same faith levy reinforcement rate"),
+    "lifestyle_hunter_xp_gain_mult": ("猎人生活方式经验","Hunter lifestyle experience"),
+    "lifestyle_mystic_xp_gain_mult": ("神秘主义生活方式经验","Mystic lifestyle experience"),
+    "lifestyle_reveler_xp_gain_mult": ("狂欢生活方式经验","Reveler lifestyle experience"),
+    "lifestyle_scholar_xp_gain_mult": ("学者生活方式经验","Scholar lifestyle experience"),
+    "maa_siege_value_mult": ("兵士攻城值","Men-at-arms siege value"),
+    "martial": ("军事","Martial"),
+    "martial_per_piety_level": ("每级虔诚军事","Martial per piety level"),
+    "max_learn_language_schemes_add": ("学习语言计谋上限","Max learn language schemes"),
+    "minority_opinion": ("少数族群好感","Minority opinion"),
+    "minority_tax_contribution_mult": ("少数族群赋税贡献","Minority tax contribution"),
+    "monthly_diplomacy_lifestyle_xp_gain_mult": ("每月外交生活方式经验","Monthly diplomacy lifestyle experience"),
+    "monthly_dynasty_prestige": ("每月王朝威望","Monthly dynasty prestige"),
+    "monthly_intrigue_lifestyle_xp_gain_mult": ("每月谋略生活方式经验","Monthly intrigue lifestyle experience"),
+    "monthly_learning_lifestyle_xp_gain_mult": ("每月学识生活方式经验","Monthly learning lifestyle experience"),
+    "monthly_legitimacy_add": ("每月合法性","Monthly legitimacy"),
+    "monthly_lifestyle_xp_gain_mult": ("每月生活方式经验","Monthly lifestyle experience"),
+    "monthly_piety_from_buildings_mult": ("来自建筑的虔诚","Piety from buildings"),
+    "monthly_piety_gain_mult": ("每月虔诚获取","Monthly piety gain"),
+    "monthly_piety_gain_per_court_position_mult": ("每个宫廷职位每月虔诚","Monthly piety per court position"),
+    "monthly_piety_gain_per_knight_mult": ("每名骑士每月虔诚","Monthly piety per knight"),
+    "monthly_prestige_gain_mult": ("每月威望获取","Monthly prestige gain"),
+    "monthly_prestige_gain_per_court_position_mult": ("每个宫廷职位每月威望","Monthly prestige per court position"),
+    "monthly_stewardship_lifestyle_xp_gain_mult": ("每月管理生活方式经验","Monthly stewardship lifestyle experience"),
+    "mountains_construction_gold_cost": ("山地建造花费","Mountains construction cost"),
+    "mountains_travel_danger": ("山地危险","Mountains danger"),
+    "negate_fertility_penalty_add": ("抵消生育力惩罚","Negate fertility penalty"),
+    "negate_health_penalty_add": ("抵消健康惩罚","Negate health penalty"),
+    "owned_legend_spread_mult": ("己方传说传播","Owned legend spread"),
+    "owned_scheme_secrecy_add": ("己方计谋隐秘","Owned scheme secrecy"),
+    "piety_level_impact_mult": ("虔诚等级影响","Piety level impact"),
+    "prowess": ("勇武","Prowess"),
+    "stewardship": ("管理","Stewardship"),
+    "stress_gain_mult": ("压力获取","Stress gain"),
+    "stress_loss_mult": ("压力损失","Stress loss"),
+    "study_faith_scheme_phase_duration_add": ("研习信仰计谋阶段时长","Study faith scheme phase duration"),
+    "tax_mult": ("赋税","Tax"),
+    "terraced_hills_construction_gold_cost": ("梯田丘陵建造花费","Terraced hills construction cost"),
+    "tyranny_gain_mult": ("暴政获取","Tyranny gain"),
 }
 
 # 引擎动态生成的 custom 文案（官方本地化里只有函数，清洗后为空）
@@ -435,9 +504,17 @@ def _scan_loc(loc_dir: str, needed: set, prefixes=()) -> dict:
     return out
 
 
-def _concept(key: str, raw: dict) -> str:
-    """`[house|E]` 这类引用：优先直取，其次 game_concept_ 前缀，最后退回键名。"""
-    for k in (key, "game_concept_" + key):
+# 少数概念在游戏本地化里没有 `game_concept_` 键，裸键又被别的命名空间占了
+# （`scheme` 命中的是肖像修饰器「工于心计」），这里直接给正名。
+_CONCEPT_FIX = {"scheme": ("计谋", "Scheme")}
+
+
+def _concept(key: str, raw: dict, zh: bool = True) -> str:
+    """`[house|E]` 这类引用：优先 game_concept_ 前缀，其次直取，最后退回键名。"""
+    fix = _CONCEPT_FIX.get(key)
+    if fix:
+        return fix[0] if zh else fix[1]
+    for k in ("game_concept_" + key, key):
         v = raw.get(k)
         if v:
             return v
@@ -461,7 +538,7 @@ def _getter_name(key: str, raw: dict) -> str:
     return _title(key)
 
 
-def _resolve(text: str, raw: dict, sv: dict | None = None, depth: int = 3) -> str:
+def _resolve(text: str, raw: dict, sv: dict | None = None, depth: int = 3, zh: bool = True) -> str:
     """展开 $变量$、[概念|E]、[GetTrait('x')...] 与脚本值，丢掉算不出来的函数。"""
     if not text:
         return text
@@ -470,7 +547,7 @@ def _resolve(text: str, raw: dict, sv: dict | None = None, depth: int = 3) -> st
         def rep(m):
             k = m.group(1)
             if k in raw and depth > 0:
-                return _resolve(raw[k], raw, sv, depth - 1)
+                return _resolve(raw[k], raw, sv, depth - 1, zh)
             return k
         text = _REF_PAT.sub(rep, text)
     # 脚本值：[EmptyScope.ScriptValue('x')|0] → 脚本里定义的真实数字
@@ -488,7 +565,7 @@ def _resolve(text: str, raw: dict, sv: dict | None = None, depth: int = 3) -> st
                 return _getter_name(gm.group(1), raw)
             return ""          # 其他脚本函数（取对象名等）直接丢掉，别留孤立的 ?
         text = _FUNC_PAT.sub(frep, text)
-        text = _TOK_PAT.sub(lambda m: _concept(m.group(1), raw), text)
+        text = _TOK_PAT.sub(lambda m: _concept(m.group(1), raw, zh), text)
     return text
 
 
@@ -525,7 +602,7 @@ def _title(key: str) -> str:
 
 def _finalize(raw: dict, sv: dict | None = None, zh: bool = True) -> dict:
     """引用展开 + 清洗，得到可直接显示的译名表。"""
-    out = {k: _clean(_resolve(v, raw, sv), zh) for k, v in raw.items()}
+    out = {k: _clean(_resolve(v, raw, sv, 3, zh), zh) for k, v in raw.items()}
     # 兜底：还有漏网的 $key$，绝不能把美元符号带到界面上
     for k, v in list(out.items()):
         if "$" in v:
@@ -1028,17 +1105,25 @@ def _mn(mapping: dict, key: str, zh: bool = True):
     return v
 
 
-def _fmt_num(v: str) -> str:
-    """把修正值格式化成 +10 / -5 / +25% 这样。"""
+def _fmt_num(v: str, pct: bool = True) -> str:
+    """把修正值格式化成 +10 / -5 / +25% 这样。
+
+    `pct=False` 用于本身就是绝对值的修正器（每月王朝威望 0.1、健康 0.1 这类），
+    否则会被当成 10% 显示错。
+    """
     try:
         f = float(v)
     except Exception:
         return ""
-    if 0 < abs(f) < 1:
+    if pct and 0 < abs(f) < 1:
         return "%+.0f%%" % (f * 100)
     if f == int(f):
         return "%+d" % int(f)
     return "%+g" % f
+
+
+# 值是绝对值、不是百分比率的修正器（否则 0.1 会被显示成 +10%）
+ABS_MODIFIERS = {"monthly_dynasty_prestige", "monthly_legitimacy_add", "health"}
 
 
 # 修正块里有些值不是数字，而是 script_values 的名字（例：taiga_travel_danger = taiga_low_danger_reduction）
@@ -1070,7 +1155,7 @@ def _mod_line(k: str, v: str, nm: str, zh: bool = True) -> str:
         if zh:
             return "%s%s地形危险 %d 点" % ("降低" if down else "提高", terrain, amount)
         return "%s %s travel danger by %d" % ("Reduce" if down else "Increase", terrain, amount)
-    return "%s %s" % (nm, _fmt_num(str(val)))
+    return "%s %s" % (nm, _fmt_num(str(val), k not in ABS_MODIFIERS))
 
 
 def _collect_script_values(game_root: str) -> dict:
@@ -1227,11 +1312,13 @@ def _loc_any(loc: dict, key: str, first=None) -> str:
     return ""
 
 
-def _generic_effects(body: str, loc: dict, prefixes=(), zh=True) -> list:
+def _generic_effects(body: str, loc: dict, prefixes=(), zh=True, exclude_blocks=()) -> list:
     """从 parameters / special_parameters / 修正块里抽效果文案。
 
     `parameters` 有两种写法：裸标识符列表 或 `k = v`，都要能读。
     革新还有 `unlock_law` / `custom`，教义有没本地化的机制参数，都要补上。
+    `exclude_blocks`：调用方要单独展示的修正块（如信条的 personal_tenet_modifier），
+    在这里跳过，避免核心效果与个人效果重复。
     """
     eff = []
     for blk in ("parameters", "special_parameters"):
@@ -1298,6 +1385,8 @@ def _generic_effects(body: str, loc: dict, prefixes=(), zh=True) -> list:
                 eff.append((pair[0] if zh else pair[1]) + t)
     for blk in ("character_modifier", "personal_tenet_modifier", "culture_modifier",
                 "county_modifier", "province_modifier", "clergy_modifier"):
+        if blk in exclude_blocks:
+            continue
         mb = _sub(body, blk)
         if not mb:
             continue
@@ -1343,19 +1432,90 @@ def _collect_religions(game_root: str, loc: dict, doc_names: dict) -> list:
     return out
 
 
+def _tenet_personal(body: str, loc: dict, zh=True) -> list:
+    """个人教义（personal tenet）效果：只有把该信条放进「个人」槽位时才生效。
+
+    数据来自两处（见 tenet_types/_tenet_types.info）：
+      - `personal_tenet_parameters`：开关式效果，本地化键是 `doctrine_parameter_<flag>`
+      - `personal_tenet_modifier`：数值修正
+    这两块与核心信条效果（character_modifier 等）互斥，必须分开展示。
+    """
+    out = []
+    pb = _sub(body, "personal_tenet_parameters")
+    if pb:
+        for p in _list(pb):
+            t = (loc.get("doctrine_parameter_" + p) or loc.get(p)
+                 or loc.get("tenet_parameter_" + p))
+            if t:
+                out.append(t)
+    mb = _sub(body, "personal_tenet_modifier")
+    if mb:
+        for k, v in _pairs(mb).items():
+            nm = loc.get(k) or _mn(MODIFIER_NAMES, k, zh)
+            if nm:
+                out.append(_mod_line(k, v, nm, zh))
+    seen, res = set(), []
+    for e in out:
+        e = (e or "").strip()
+        if e and e not in seen:
+            seen.add(e)
+            res.append(e)
+    return res
+
+
 def _collect_tenets(game_root: str, loc: dict, zh=True) -> list:
     out = []
     for f in sorted(glob.glob(os.path.join(game_root, D_TENET, "*.txt"))):
         for key, body in _top_blocks(_read(f)):
             dlc = _val(body, "requires_dlc_flag") or ""
             cat = "需 DLC" if dlc else "通用"
-            out.append(_entry(
+            attrs = []
+            # 虔诚花费：piety_cost 按宗教分支给不同档位，把所有 value 的数值收起来，
+            # 单档就写数字，多档写成「最低~最高」，别只取文件里第一个分支（那样会写错）。
+            pc = _sub(body, "piety_cost")
+            if pc:
+                nums = []
+                for sv in re.findall(r"\bvalue\s*=\s*([A-Za-z_0-9]+)", pc):
+                    n = _SV_NUM.get(sv)
+                    if n:
+                        try:
+                            nums.append(int(float(n)))
+                        except Exception:
+                            pass
+                if nums:
+                    lo, hi = min(nums), max(nums)
+                    attrs.append({"label": "虔诚花费" if zh else "Piety cost",
+                                  "value": ("%d" % lo) if lo == hi else ("%d~%d" % (lo, hi))})
+            # 分歧度：divergence_multiplier 是倍率，1 表示不变
+            dm = _val(body, "divergence_multiplier")
+            if dm:
+                try:
+                    pct = (float(dm) - 1) * 100
+                except Exception:
+                    pct = 0
+                if pct:
+                    attrs.append({"label": "分歧度" if zh else "Divergence",
+                                  "value": "%+g%%" % pct})
+            if dlc:
+                attrs.append({"label": "需要 DLC" if zh else "DLC",
+                              "value": "By God Alone" if dlc == "by_god_alone" else _title(dlc)})
+            core = _generic_effects(body, loc,
+                                    ("doctrine_parameter_", "culture_parameter_", "tenet_parameter_"), zh,
+                                    exclude_blocks=("personal_tenet_modifier",))
+            e = _entry(
                 key, loc.get(key + "_name") or loc.get(key) or _title(key),
                 loc.get(key + "_desc") or "",
                 "dlc" if dlc else "base", cat,
-                effects=_generic_effects(body, loc,
-                                         ("doctrine_parameter_", "culture_parameter_", "tenet_parameter_"), zh),
-            ))
+                attrs=attrs, effects=core,
+            )
+            # 游戏里有 21 条把同一效果同时写进 parameters 和 personal_tenet_parameters
+            # （核心也吃、个人也吃），核心那块已经列过，个人这块只留专属的，免得重复。
+            raw_personal = _tenet_personal(body, loc, zh)
+            seen_core = set(core)
+            e["personal"] = [p for p in raw_personal if p not in seen_core]
+            if raw_personal and not e["personal"]:
+                e["personalSameAsCore"] = True   # 个人效果全与核心相同
+            out.append(e)
     out.sort(key=lambda x: x["name"])
     return out
 
@@ -1548,9 +1708,10 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
                         fam = _val(rd, "family")
                         if fam:
                             needed.update((fam, fam + "_name"))
-                    # 效果参数（各前缀都试）
+                    # 效果参数（各前缀都试）；personal_tenet_parameters 是「个人教义」的效果开关
                     for blk in ("parameters", "special_parameters", "character_modifier",
-                                "personal_tenet_modifier", "culture_modifier"):
+                                "personal_tenet_modifier", "personal_tenet_parameters",
+                                "culture_modifier"):
                         inner = _sub(body, blk)
                         if not inner:
                             continue
