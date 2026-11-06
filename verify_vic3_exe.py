@@ -128,7 +128,9 @@ def main():
             t = next((x for x in trs if x.get("key") == "ig_trait_noblesse_oblige"), trs[0])
             print("  特质样例：%s 归属=%s 条件=%s 效果=%s"
                   % (t.get("name"), t.get("cat"), t.get("approval"), (t.get("effects") or [])[:2]))
-            ok = ok and bool(t.get("cat")) and bool(t.get("effects"))
+            cond = (t.get("attrs") or [{}])[0].get("value") or ""
+            print("  详情顶部生效条件：%s" % (cond or "（缺失）"))
+            ok = ok and bool(t.get("cat")) and bool(t.get("effects")) and bool(cond)
             try:
                 b2, h2 = get_raw(base + "/api/wiki/law-icon?n=" + urllib.parse.quote(t.get("icon") or "")
                                  + "&k=igtrait", 60)

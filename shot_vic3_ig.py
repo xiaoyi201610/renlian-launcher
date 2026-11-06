@@ -199,6 +199,11 @@ def main():
 
     print("\n展开「贵族义务」:", open_row(c, "贵族义务"))
     print(read_open(c))
+    # 展开态也拍一张：滚到展开行，确认「生效条件」这些字段真的画出来了
+    c.js("""(() => { const r=document.querySelector('.wk-row.open');
+        if (r) r.scrollIntoView({block:'start'}); return 'ok'; })()""")
+    time.sleep(0.5)
+    shot(c, "vic3-igtrait-open.png")
 
     # 按集团筛选（8 个分类，前端用胶囊按钮，不是下拉）
     c.js("""(() => { const b = Array.from(document.querySelectorAll('.wk-cat'))

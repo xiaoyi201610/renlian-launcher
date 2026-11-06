@@ -20,7 +20,7 @@ import time
 import colorsys
 import threading
 
-V3_VER = 5                      # 解析逻辑变更时 +1，强制重建缓存
+V3_VER = 6                      # 解析逻辑变更时 +1，强制重建缓存
 
 LANG_MAP = {
     "zh": "simp_chinese",
@@ -796,6 +796,7 @@ def _scan_ig_traits(tdir, loc, owner, ig_meta, ig_order):
                 "color": color,
                 "approval": cond,
                 "approvalKey": lo or hi,
+                "attrs": attrs,          # 详情顶部的「生效条件」，之前漏了没下发
                 "effects": effects,
                 "secs": [],
             })
