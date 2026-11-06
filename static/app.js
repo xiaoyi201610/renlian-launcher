@@ -474,7 +474,8 @@ function bindNav() {
 
 /* ---------------- 百科（军队 / 文化 / 传统） ---------------- */
 const WIKI_SITE = 'https://ck3.paradoxwikis.com/';
-const WIKI_ST = { data: null, owners: null, tab: '', q: '', cat: '', open: '', force: false, sort: 'type' };
+const WIKI_ST = { data: null, owners: null, tab: '', q: '', cat: '', area: '', tier: '', flag: '',
+  open: '', force: false, sort: 'type' };
 const WK_LABEL = { damage: 'wiki.damage', toughness: 'wiki.toughness', pursuit: 'wiki.pursuit', screen: 'wiki.screen' };
 
 /* 各游戏的 wiki 站点（用于「打开 wiki」按钮） */
@@ -576,6 +577,7 @@ async function renderWiki() {
   if (!tabs.some(t => t.id === WIKI_ST.tab)) {
     WIKI_ST.tab = tabs.length ? tabs[0].id : 'maa';
     WIKI_ST.cat = '';
+    WIKI_ST.area = ''; WIKI_ST.tier = ''; WIKI_ST.flag = '';
   }
   paintWiki();
 }
@@ -612,11 +614,19 @@ function wikiItems() {
       (hit(c.name) || hit(c.key) || hit(c.ethos && c.ethos.name) || hit(c.heritage && c.heritage.name)));
   }
   if (layout === 'generic') {
-    const arr = (d[tid] || []).filter(x =>
-      (!cat || x.catKey === cat) &&
-      (hit(x.name) || hit(x.key) || hit(x.desc) || hit(x.cat) ||
-       (x.effects || []).some(hit) || (x.links || []).some(hit) ||
-       (x.attrs || []).some(a => hit(a.label) || hit(a.value))));
+    const arr = (d[tid] || []).filter(x => {
+      if (!cat) { /* 未选子分类 */ }
+      else if (x.catKey !== cat && (x.cats || []).indexOf(cat) < 0) return false;
+      if (tid === 'tech' && WIKI_ST.area && x.areaKey !== WIKI_ST.area) return false;
+      if (tid === 'tech') {
+        if (WIKI_ST.tier !== '' && Number(x.tier) !== Number(WIKI_ST.tier)) return false;
+        if (WIKI_ST.flag && !x[WIKI_ST.flag]) return false;
+      }
+      return hit(x.name) || hit(x.key) || hit(x.desc) || hit(x.cat) ||
+        (x.effects || []).some(hit) || (x.links || []).some(hit) ||
+        (x.attrs || []).some(a => hit(a.label) || hit(a.value)) ||
+        (x.cats || []).some(hit);
+    });
     const order = (d.catOrders || {})[tid] || [];
     if (order.length) {
       // 先按分类顺序分组，组内保持后端的脚本原始顺序
@@ -648,6 +658,14 @@ function wikiFilters() {
       seen[h.key] = { v: h.key, label: h.name || h.key, n: (seen[h.key] ? seen[h.key].n : 0) + 1 };
     });
     return Object.values(seen).sort((a, b) => b.n - a.n);
+  }
+  if (tid === 'tech' && (d.techAreas || []).length) {
+    // 领域 → 子分类：选中领域后只列该领域下的子分类
+    const areas = d.techAreas || [];
+    const cur = WIKI_ST.area ? areas.filter(a => a.key === WIKI_ST.area) : areas;
+    const out = [];
+    cur.forEach(a => (a.cats || []).forEach(c => out.push({ v: c.key, label: c.label, n: c.n })));
+    return out;
   }
   if (layout === 'generic') {
     const seen = {};
@@ -818,6 +836,17 @@ function wikiRow(it) {
           <ul class="wk-eff">${pf.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>`
           : (it.personalSameAsCore ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.personalEffects'))}</div>
           <div class="wk-pd">${esc(T('wiki.personalSameAsCore'))}</div></div>` : '')}
+        ${(it.variants || []).length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.variants'))} (${it.variants.length})</div>
+          <div class="wk-var-note">${esc(T('wiki.variantsHint'))}</div>
+          ${it.variants.map(v => `<div class="wk-var">
+            <div class="wk-var-top"><b>${esc(v.name || it.name)}</b>
+              ${(v.cond || []).length ? `<span class="wk-var-cond">${esc(v.cond.join(' / '))}</span>` : ''}</div>
+            ${v.desc ? `<div class="wk-var-desc">${esc(v.desc)}</div>` : ''}
+            ${(v.effects || []).length
+              ? `<ul class="wk-eff tight">${v.effects.map(e => `<li>${esc(e)}</li>`).join('')}</ul>`
+              : (v.inheritEffects && !v.desc ? `<div class="wk-pd">${esc(T('wiki.variantInherit'))}</div>` : '')}
+          </div>`).join('')}
+        </div>` : ''}
         ${links.length ? `<div class="wk-sec"><div class="wk-h">${esc(T('wiki.linked'))} (${links.length})</div>
           <div class="wk-chips">${links.map(n => `<span class="wk-chip">${esc(n)}</span>`).join('')}</div>
         </div>` : ''}
@@ -873,6 +902,39 @@ function paintWiki() {
   ];
   // 分类太多了（教义有 49 组、群星科技 3 类无妨）就换成下拉，别把胶囊铺满屏
   const useSelect = cats.length > 14;
+  // 群星科技：领域（物理/社会/工程）→ 子分类（生物学/计算技术…）→ 层级 → 危险/稀有/循环
+  const isTech = !isCk3 && WIKI_ST.tab === 'tech' && (d.techAreas || []).length > 0;
+  const areaBar = isTech ? `
+    <div class="wk-cats wk-areabar">
+      ${[{ key: '', label: T('wiki.all'), n: null }].concat(
+        (d.techAreas || []).map(a => ({ key: a.key, label: a.label, n: a.n }))).map(a =>
+        `<button class="wk-cat ${WIKI_ST.area === a.key ? 'active' : ''}" data-area="${esc(a.key)}">
+          ${esc(a.label)}${a.n !== null ? `<b>${a.n}</b>` : ''}</button>`).join('')}
+    </div>
+    <div class="wk-cats wk-tierbar">
+      ${[{ v: '', label: T('wiki.allTier'), n: null }].concat(
+        (d.techTiers || []).map(t => ({ v: String(t.v), label: t.v
+          ? T('wiki.tierN', { n: t.v }) : T('wiki.tierSpecial'), n: t.n }))).map(t =>
+        `<button class="wk-cat wk-cat-sm ${WIKI_ST.tier === t.v ? 'active' : ''}" data-tier="${esc(t.v)}">
+          ${esc(t.label)}${t.n !== null ? `<b>${t.n}</b>` : ''}</button>`).join('')}
+      ${(d.techFlags || []).map(f =>
+        `<button class="wk-cat wk-cat-sm ${WIKI_ST.flag === f.key ? 'active' : ''}" data-flag="${esc(f.key)}">
+          ${esc(f.label)}<b>${f.n}</b></button>`).join('')}
+    </div>` : '';
+  // 群星传统：选中某棵树时显示这棵树的说明与 AI 权重（对应游戏里树界面左下角）
+  const tree = (!isCk3 && WIKI_ST.tab === 'traditions' && WIKI_ST.cat)
+    ? ((d.treeInfo || {})[WIKI_ST.cat] || null) : null;
+  const treeCard = tree ? `
+    <div class="wk-treeinfo">
+      <div class="wk-tree-head">
+        <b>${esc((cats.find(c => c.v === WIKI_ST.cat) || {}).label || '')}</b>
+        ${tree.aiWeight !== null && tree.aiWeight !== undefined
+          ? `<span>${esc(T('wiki.aiWeight'))} ${esc(String(tree.aiWeight))}</span>` : ''}
+      </div>
+      ${(tree.descs || []).map(x => `<div class="wk-tree-desc">
+        ${x.cond && x.cond.length ? `<em>${esc(x.cond.join(' / '))}</em>` : ''}
+        <span>${esc(x.text)}</span></div>`).join('')}
+    </div>` : '';
 
   $('#view').innerHTML = `
     <div class="page-head"><div>
@@ -890,6 +952,7 @@ function paintWiki() {
     </div>
 
     ${layout === 'maa' ? wikiCycleCard() : ''}
+    ${areaBar}
 
     <div class="wk-toolbar">
       <input class="inp wk-search" id="wkQ" value="${esc(WIKI_ST.q)}" placeholder="${esc(T('wiki.search'))}">
@@ -905,6 +968,8 @@ function paintWiki() {
               ${esc(c.label)}${c.n !== null ? `<b>${c.n}</b>` : ''}</button>`).join('')}</div>`}
     </div>
 
+    ${treeCard}
+
     <div class="wk-count">${esc(T('wiki.found', { n: items.length }))}${
       d.cached === false ? ` <span class="wk-new">${esc(T('wiki.justBuilt'))}</span>` : ''}</div>
 
@@ -913,10 +978,22 @@ function paintWiki() {
     </div>`;
 
   $$('.wk-tab').forEach(b => b.onclick = () => {
-    WIKI_ST.tab = b.dataset.tab; WIKI_ST.cat = ''; WIKI_ST.open = ''; paintWiki();
+    WIKI_ST.tab = b.dataset.tab; WIKI_ST.cat = ''; WIKI_ST.area = ''; WIKI_ST.tier = '';
+    WIKI_ST.flag = ''; WIKI_ST.open = ''; paintWiki();
   });
   $$('.wk-cat').forEach(b => b.onclick = () => {
+    if (b.dataset.cat === undefined) return;   // 领域/层级/标记按钮走各自的绑定
     WIKI_ST.cat = b.dataset.cat; WIKI_ST.open = ''; paintWiki();
+  });
+  $$('[data-area]').forEach(b => b.onclick = () => {
+    WIKI_ST.area = b.dataset.area; WIKI_ST.cat = ''; WIKI_ST.open = ''; paintWiki();
+  });
+  $$('[data-tier]').forEach(b => b.onclick = () => {
+    WIKI_ST.tier = b.dataset.tier; WIKI_ST.open = ''; paintWiki();
+  });
+  $$('[data-flag]').forEach(b => b.onclick = () => {
+    WIKI_ST.flag = (WIKI_ST.flag === b.dataset.flag) ? '' : b.dataset.flag;
+    WIKI_ST.open = ''; paintWiki();
   });
   const sel = $('#wkSel');
   if (sel) sel.onchange = () => { WIKI_ST.cat = sel.value; WIKI_ST.open = ''; paintWiki(); };

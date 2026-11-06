@@ -154,11 +154,34 @@ def main():
         time.sleep(0.25)
 
     # 截图
+    # argv: tab [输出文件] [搜索词] [领域 key] [层级或标记 key] [子分类 key]
     only_tab = sys.argv[1] if len(sys.argv) > 1 else "civics"
     out = sys.argv[2] if len(sys.argv) > 2 else "sl-shot.png"
     only_txt = sys.argv[3] if len(sys.argv) > 3 else ""
+    only_area = sys.argv[4] if len(sys.argv) > 4 else ""
+    only_lvl = sys.argv[5] if len(sys.argv) > 5 else ""
+    only_cat = sys.argv[6] if len(sys.argv) > 6 else ""
     c.js("document.querySelector('.wk-tab[data-tab=\"%s\"]').click(); 'ok'" % only_tab)
     time.sleep(0.6)
+    if only_area:
+        c.js("""(() => { const b = document.querySelector('[data-area="%s"]'); if (b) b.click(); return 'ok'; })()""" % only_area)
+        time.sleep(0.5)
+    if only_lvl:
+        tag = "data-flag" if only_lvl in ("dangerous", "rare", "repeatable") else "data-tier"
+        c.js("""(() => { const b = document.querySelector('[%s="%s"]'); if (b) b.click(); return 'ok'; })()""" % (tag, only_lvl))
+        time.sleep(0.5)
+    if only_cat:
+        c.js("""(() => {
+            const sel = document.querySelector('#wkSel');
+            if (sel) { sel.value = %s; sel.dispatchEvent(new Event('change',{bubbles:true})); return 'ok'; }
+            const b = document.querySelector('[data-cat="%s"]'); if (b) b.click(); return 'ok';
+        })()""" % (json.dumps(only_cat), only_cat))
+        time.sleep(0.6)
+        print("  [诊断] cat=%s area=%s 行数=%s 错误=%s" % (
+            c.js("(typeof WIKI_ST!=='undefined'? WIKI_ST.cat : 'no-var')"),
+            c.js("(typeof WIKI_ST!=='undefined'? WIKI_ST.area : 'no-var')"),
+            c.js("document.querySelectorAll('.wk-row').length"),
+            c.js("(window.__lastErr||'-')")))
     if only_txt:
         c.js("""(() => {
             const q = document.querySelector('#wkQ');
