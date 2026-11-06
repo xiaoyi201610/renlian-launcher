@@ -480,8 +480,10 @@ const WK_LABEL = { damage: 'wiki.damage', toughness: 'wiki.toughness', pursuit: 
 
 /* 各游戏的 wiki 站点（用于「打开 wiki」按钮） */
 function wikiSite() {
-  return (WIKI_ST.data && WIKI_ST.data.game === 'stellaris')
-    ? 'https://stellaris.paradoxwikis.com/' : WIKI_SITE;
+  const g = WIKI_ST.data && WIKI_ST.data.game;
+  if (g === 'stellaris') return 'https://stellaris.paradoxwikis.com/';
+  if (g === 'hoi4') return 'https://hoi4.paradoxwikis.com/';
+  return WIKI_SITE;
 }
 
 /* 当前 tab 的元数据：后端下发，带 layout 决定用哪套渲染分支 */
@@ -818,7 +820,7 @@ function wikiRow(it) {
     const effTitle = isTenet ? T('wiki.coreEffects') : T('wiki.effects');
     const pf = it.personal || [];
     /* 群星的名字本身就是中文，再挂一行英文字号反而挤；CK3 保留英文副标题便于对照 wiki */
-    const isSl = (WIKI_ST.data && WIKI_ST.data.game === 'stellaris');
+    const isSl = (WIKI_ST.data && ['stellaris', 'hoi4'].includes(WIKI_ST.data.game));
     line = `<span class="wk-name">${esc(it.name)}${isSl ? '' : `<small>${esc(wikiTitle(it.key))}</small>`}</span>
       <span class="wk-tag">${esc(it.cat || T('wiki.all'))}</span>
       <span class="wk-mini wk-ellipsis">${esc(it.desc || (ef[0] || ''))}</span>`;
@@ -883,6 +885,352 @@ function wikiRow(it) {
   </div>`;
 }
 
+
+/* ---------------- 国策树画布（钢铁雄心） ----------------
+   坐标来自脚本的网格：x 每格 96px、y 每格 132px，和游戏里的排布比例一致。
+   节点是普通 DOM（带 transform 缩放），连线是同一容器里的 SVG，
+   这样滚轮缩放 / 拖动平移都是纯 CSS 变换，几百个节点也不掉帧。 */
+const FX = {
+  tree: '', data: null, cache: {}, scale: 1, tx: 0, ty: 0, sel: '', q: '',
+  io: null, bx: 0, by: 0, px: 0, py: 0, drag: false,
+};
+const FX_X = 96, FX_Y = 132, FX_W = 88, FX_ICON = 64;
+
+function fxTreeList(d) {
+  const ts = (d.focusTrees || []).slice();
+  // 通用国策树放最前面，其余按名字排（中文用 localeCompare）
+  ts.sort((a, b) => (b.default ? 1 : 0) - (a.default ? 1 : 0) ||
+    String(a.name).localeCompare(String(b.name), 'zh'));
+  return ts;
+}
+
+function fxTabsHtml(tabs) {
+  return `<div class="wk-tabs">${tabs.map(t =>
+    `<button class="wk-tab ${WIKI_ST.tab === t.id ? 'active' : ''}" data-tab="${t.id}">
+      <i>${t.icon || ''}</i><span>${esc(wkTabLabel(t))}</span><b>${t.n}</b></button>`).join('')}</div>`;
+}
+
+async function paintFocus(tabs) {
+  const d = WIKI_ST.data;
+  const list = fxTreeList(d);
+  if (!list.length) {
+    $('#view').innerHTML = `<div class="page-head"><div>
+        <div class="page-title">${esc(T('wiki.title'))}</div>
+        <div class="page-sub">${esc(T('wiki.sub'))}</div></div></div>
+      ${fxTabsHtml(tabs)}
+      <div class="card"><div class="empty">${esc(T('wiki.fxEmpty'))}</div></div>`;
+    bindFxTabs();
+    return;
+  }
+  if (!FX.tree || !list.some(t => t.id === FX.tree)) FX.tree = list[0].id;
+
+  $('#view').innerHTML = `
+    <div class="page-head"><div>
+      <div class="page-title">${esc(T('wiki.title'))}</div>
+      <div class="page-sub">${esc(T('wiki.sub'))}</div>
+    </div><div class="bar">
+      <button class="btn sm ghost" id="wkRefresh" title="${esc(T('wiki.refreshHint'))}">⟳ ${esc(T('wiki.refresh'))}</button>
+    </div></div>
+
+    ${fxTabsHtml(tabs)}
+
+    <div class="fx-bar">
+      <select class="inp wk-sel" id="fxTree">${list.map(t =>
+        `<option value="${esc(t.id)}" ${FX.tree === t.id ? 'selected' : ''}>${esc(t.name)}（${t.n}）</option>`).join('')}</select>
+      <input class="inp wk-search" id="fxQ" value="${esc(FX.q)}" placeholder="${esc(T('wiki.fxSearch'))}">
+      <span class="fx-sp"></span>
+      <button class="fx-btn" id="fxOut" title="${esc(T('wiki.fxZoomOut'))}">−</button>
+      <span class="fx-zoom" id="fxZoom">100%</span>
+      <button class="fx-btn" id="fxIn" title="${esc(T('wiki.fxZoomIn'))}">+</button>
+      <button class="fx-btn" id="fxFit">${esc(T('wiki.fxFit'))}</button>
+    </div>
+
+    <div class="fx-stage" id="fxStage">
+      <div class="fx-world" id="fxWorld">
+        <svg class="fx-links" id="fxLinks"></svg>
+        <div id="fxNodes"></div>
+      </div>
+    </div>
+    <div class="fx-detail" id="fxDetail"><div class="fx-pd">${esc(T('wiki.fxPick'))}</div></div>`;
+
+  bindFxTabs();
+  $('#wkRefresh').onclick = async () => { WIKI_ST.force = true; FX.cache = {}; await renderWiki(); };
+
+  const sel = $('#fxTree');
+  sel.onchange = () => { FX.tree = sel.value; FX.sel = ''; FX.q = ''; fxLoad(sel.value); };
+  const q = $('#fxQ');
+  q.oninput = () => { FX.q = q.value.trim().toLowerCase(); fxMark(); };
+  $('#fxIn').onclick = () => fxZoom(1.25);
+  $('#fxOut').onclick = () => fxZoom(0.8);
+  $('#fxFit').onclick = () => fxFit();
+
+  const stage = $('#fxStage');
+  stage.addEventListener('mousedown', e => {
+    if (e.target.closest('.fx-node')) return;
+    FX.drag = true; FX.bx = e.clientX; FX.by = e.clientY;
+    FX.px = FX.tx; FX.py = FX.ty;
+    stage.classList.add('drag');
+  });
+  window.addEventListener('mousemove', fxMove);
+  window.addEventListener('mouseup', fxUp);
+  stage.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = stage.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const k = e.deltaY < 0 ? 1.25 : 0.8;
+    const ns = Math.min(3, Math.max(0.1, FX.scale * k));
+    const f = ns / FX.scale;
+    FX.tx = mx - (mx - FX.tx) * f;
+    FX.ty = my - (my - FX.ty) * f;
+    FX.scale = ns;
+    fxApply();
+  }, { passive: false });
+
+  await fxLoad(FX.tree);
+}
+
+function bindFxTabs() {
+  $$('.wk-tab').forEach(b => b.onclick = () => {
+    WIKI_ST.tab = b.dataset.tab; WIKI_ST.cat = ''; WIKI_ST.open = '';
+    WIKI_ST.area = ''; WIKI_ST.tier = ''; WIKI_ST.flag = '';
+    paintWiki();
+  });
+}
+
+function fxMove(e) {
+  if (!FX.drag) return;
+  FX.tx = FX.px + (e.clientX - FX.bx);
+  FX.ty = FX.py + (e.clientY - FX.by);
+  fxApply();
+}
+function fxUp() {
+  if (!FX.drag) return;
+  FX.drag = false;
+  const st = $('#fxStage');
+  if (st) st.classList.remove('drag');
+}
+
+function fxApply() {
+  const w = $('#fxWorld');
+  if (!w) return;
+  w.style.transform = `translate(${FX.tx}px,${FX.ty}px) scale(${FX.scale})`;
+  const z = $('#fxZoom');
+  if (z) z.textContent = Math.round(FX.scale * 100) + '%';
+  fxIcons();
+}
+
+function fxZoom(k) {
+  const stage = $('#fxStage');
+  if (!stage) return;
+  const r = stage.getBoundingClientRect();
+  const mx = r.width / 2, my = r.height / 2;
+  const ns = Math.min(2.6, Math.max(0.2, FX.scale * k));
+  const f = ns / FX.scale;
+  FX.tx = mx - (mx - FX.tx) * f;
+  FX.ty = my - (my - FX.ty) * f;
+  FX.scale = ns;
+  fxApply();
+}
+
+function fxHome() {
+  const t = FX.data, stage = $('#fxStage');
+  if (!t || !stage) return;
+  const r = stage.getBoundingClientRect();
+  const W = (t.x1 - t.x0 + 1) * FX_X;
+  FX.scale = Math.min(1, Math.max(0.35, Math.min(0.7, (r.width / W) * 2.2)));
+  FX.tx = (r.width - W * FX.scale) / 2;
+  FX.ty = 16;
+  fxApply();
+}
+
+function fxFit() {
+  const t = FX.data, stage = $('#fxStage');
+  if (!t || !stage) return;
+  const r = stage.getBoundingClientRect();
+  const W = (t.x1 - t.x0 + 1) * FX_X, H = (t.y1 - t.y0 + 1) * FX_Y;
+  const s = Math.min(1.4, Math.max(0.08, Math.min((r.width - 40) / W, (r.height - 40) / H)));
+  FX.scale = s;
+  FX.tx = (r.width - W * s) / 2;
+  FX.ty = (r.height - H * s) / 2;
+  fxApply();
+}
+
+async function fxLoad(tid) {
+  const stage = $('#fxStage');
+  if (stage && !FX.data) stage.innerHTML = `<div class="fx-empty">${esc(T('wiki.building'))}</div>`;
+  let t = FX.cache[tid];
+  if (!t) {
+    try {
+      t = await api('/api/wiki/focus?tree=' + encodeURIComponent(tid));
+    } catch (e) {
+      t = null;
+    }
+    if (!t || !t.ok) {
+      if (stage) stage.innerHTML = `<div class="fx-empty">${esc(T('wiki.fxLoadFail'))}</div>`;
+      return;
+    }
+    FX.cache[tid] = t;
+  }
+  FX.data = t;
+  FX.sel = '';
+  fxDraw(t);
+  fxHome();
+  const det = $('#fxDetail');
+  if (det) det.innerHTML = `<div class="fx-pd">${esc(T('wiki.fxPick'))}</div>`;
+}
+
+function fxDraw(t) {
+  const stage = $('#fxStage');
+  if (!stage) return;
+  stage.innerHTML = `<div class="fx-world" id="fxWorld">
+      <svg class="fx-links" id="fxLinks"></svg><div id="fxNodes"></div></div>`;
+  const W = (t.x1 - t.x0 + 1) * FX_X, H = (t.y1 - t.y0 + 1) * FX_Y;
+  const world = $('#fxWorld');
+  world.style.width = W + 'px';
+  world.style.height = H + 'px';
+
+  const pos = {};
+  (t.focuses || []).forEach(n => {
+    pos[n.id] = {
+      x: (n.x - t.x0) * FX_X + (FX_X - FX_W) / 2,
+      y: (n.y - t.y0) * FX_Y,
+    };
+  });
+
+  // 连线：前置（实线）+ 互斥（红色虚线）
+  const paths = [];
+  (t.focuses || []).forEach(n => {
+    const c = pos[n.id];
+    if (!c) return;
+    (n.pre || []).forEach(pid => {
+      const p = pos[pid];
+      if (!p) return;
+      const x1 = p.x + FX_W / 2, y1 = p.y + FX_ICON + 6;
+      const x2 = c.x + FX_W / 2, y2 = c.y;
+      paths.push(`<path d="M${x1} ${y1} L${x1} ${y1 + 26} L${x2} ${y2 - 26} L${x2} ${y2}"/>`);
+    });
+    (n.mutex || []).forEach(mid => {
+      const p = pos[mid];
+      if (!p) return;
+      if (mid < n.id) return;   // 互斥是双向的，只画一次
+      const x1 = p.x + FX_W / 2, y1 = p.y + FX_ICON + 6;
+      const x2 = c.x + FX_W / 2, y2 = c.y + FX_ICON + 6;
+      paths.push(`<path class="mx" d="M${x1} ${y1} L${x2} ${y2}"/>`);
+    });
+  });
+  $('#fxLinks').innerHTML = paths.join('');
+
+  $('#fxNodes').innerHTML = (t.focuses || []).map(n => {
+    const p = pos[n.id];
+    return `<div class="fx-node" data-id="${esc(n.id)}" style="left:${p.x}px;top:${p.y}px">
+      <div class="fx-ic">${n.icon
+        ? `<img alt="" data-src="/api/wiki/focus-icon?n=${encodeURIComponent(n.icon)}">`
+        : `<span class="fx-no">◆</span>`}</div>
+      <span class="fx-nm">${esc(n.nm)}</span></div>`;
+  }).join('');
+
+  // 图标懒加载：438 个节点一次性请 DDS 转 PNG 会把后端点爆，只加载进视口的。
+  // 这里不用 IntersectionObserver —— 节点在 transform 容器里，缩放/平移后
+  // 可见性判断不可靠，直接按屏幕坐标自己算。
+  const imgs = $$('#fxNodes img');
+  imgs.forEach(im => {
+    im.onerror = () => {
+      const box = im.parentNode;
+      im.remove();
+      if (box && !box.querySelector('.fx-no')) box.innerHTML = '<span class="fx-no">◆</span>';
+    };
+  });
+  fxIcons(true);
+
+  $$('#fxNodes .fx-node').forEach(el => {
+    el.onclick = () => {
+      FX.sel = el.dataset.id;
+      $$('#fxNodes .fx-node').forEach(x => x.classList.toggle('sel', x === el));
+      fxDetail(FX.sel);
+    };
+    el.ondblclick = () => fxCenter(el.dataset.id);
+  });
+  if (FX.q) fxMark();
+}
+
+let _fxIconTimer = 0;
+function fxIcons(now) {
+  const stage = $('#fxStage');
+  if (!stage) return;
+  const run = () => {
+    const r = stage.getBoundingClientRect();
+    const pad = 80;
+    $$('#fxNodes .fx-node').forEach(el => {
+      const im = el.querySelector('img');
+      if (!im || im.src || !im.dataset.src) return;
+      const b = el.getBoundingClientRect();
+      if (b.right < r.left - pad || b.left > r.right + pad ||
+          b.bottom < r.top - pad || b.top > r.bottom + pad) return;
+      im.src = im.dataset.src;
+    });
+  };
+  if (now) { run(); return; }
+  clearTimeout(_fxIconTimer);
+  _fxIconTimer = setTimeout(run, 120);
+}
+
+function fxCenter(id) {
+  const t = FX.data, p = (t.focuses || []).find(n => n.id === id);
+  const stage = $('#fxStage');
+  if (!p || !stage) return;
+  const r = stage.getBoundingClientRect();
+  const cx = (p.x - t.x0) * FX_X + FX_W / 2;
+  const cy = (p.y - t.y0) * FX_Y + FX_ICON / 2;
+  FX.tx = r.width / 2 - cx * FX.scale;
+  FX.ty = r.height / 2 - cy * FX.scale;
+  fxApply();
+}
+
+function fxMark() {
+  const q = FX.q;
+  let first = null;
+  $$('#fxNodes .fx-node').forEach(el => {
+    const n = (FX.data.focuses || []).find(x => x.id === el.dataset.id);
+    if (!n || !q) { el.classList.remove('hit', 'dim'); return; }
+    const hit = String(n.nm || '').toLowerCase().includes(q) ||
+      String(n.id).toLowerCase().includes(q) ||
+      String(n.ds || '').toLowerCase().includes(q) ||
+      (n.fx || []).some(x => String(x).toLowerCase().includes(q));
+    el.classList.toggle('hit', hit);
+    el.classList.toggle('dim', !hit);
+    if (hit && !first) first = el;
+  });
+  if (first) fxCenter(first.dataset.id);
+}
+
+function fxDetail(id) {
+  const t = FX.data;
+  const n = (t.focuses || []).find(x => x.id === id);
+  const box = $('#fxDetail');
+  if (!n || !box) return;
+  const byId = {};
+  (t.focuses || []).forEach(x => { byId[x.id] = x; });
+  const nm = pid => (byId[pid] || {}).nm || pid;
+  const pre = (n.pre || []).map(nm);
+  const mutex = (n.mutex || []).map(nm);
+  const meta = [];
+  meta.push(`${esc(T('wiki.fxCost'))} ${esc(n.cost || '—')}`);
+  if (n.bypass) meta.push(esc(T('wiki.fxBypass')));
+  (n.filters || []).filter(Boolean).forEach(f => meta.push(esc(f)));
+  box.innerHTML = `
+    <div class="fx-dh"><b>${esc(n.nm)}</b><small>${esc(n.id)}</small></div>
+    ${n.ds ? `<div class="fx-desc">${esc(n.ds)}</div>` : ''}
+    <div class="fx-meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>
+    ${pre.length ? `<div class="fx-h">${esc(T('wiki.fxPre'))}</div>
+      <div class="fx-meta">${pre.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+    ${mutex.length ? `<div class="fx-h">${esc(T('wiki.fxMutex'))}</div>
+      <div class="fx-meta">${mutex.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+    <div class="fx-h">${esc(T('wiki.effects'))}</div>
+    ${(n.fx || []).length
+      ? `<ul class="fx-eff">${n.fx.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`
+      : `<div class="fx-pd">${esc(T('wiki.noEffects'))}</div>`}`;
+}
+
 function paintWiki() {
   const d = WIKI_ST.data;
   const isCk3 = d.game !== 'stellaris';
@@ -891,6 +1239,7 @@ function paintWiki() {
     id: t.id, icon: t.icon || '', label: wkTabLabel(t), n: t.count,
   }));
   const layout = wkLayout();
+  if (layout === 'focus') { paintFocus(tabs); return; }
   const items = wikiItems();
   const cats = [{ v: '', label: T('wiki.all'), n: null }].concat(wikiFilters());
   const sortOpts = [

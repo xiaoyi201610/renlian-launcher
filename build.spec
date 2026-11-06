@@ -18,6 +18,7 @@ a = Analysis(
         'steambeta',               # backend/steambeta.py（Steam 版本分支读写）
         'wiki',                    # backend/wiki.py（百科：兵种/文化/传统，读本体脚本+本地化）
         'stellaris',               # backend/stellaris.py（群星百科：理念/起源/传统/科技…）
+        'hoi4',                    # backend/hoi4.py（钢铁雄心百科：理念/顾问特质/国策树）
         'dlc_meta',                # backend/dlc_meta.py（DLC 发布日期/大小）
         'dlc_cn',                  # backend/dlc_cn.py（DLC 中文名对照，全游戏离线）
         'windlg',                  # backend/windlg.py（原生文件对话框）

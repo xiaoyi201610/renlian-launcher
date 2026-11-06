@@ -1089,6 +1089,29 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "supported": True,
                                 "error": "读取百科失败：%s" % ex})
                 return
+            if p == "/api/wiki/focus":
+                # 单棵国策树的节点（前端切树时才拉，首屏不塞几 MB 数据）
+                try:
+                    self._json(wiki.focus_tree(
+                        CTX.game, CTX.cfg.get("gameRoot") or "",
+                        q.get("tree") or "", CTX.cfg.get("uiLang") or "zh"))
+                except Exception as ex:
+                    self._json({"ok": False, "error": "读取国策树失败：%s" % ex})
+                return
+            if p == "/api/wiki/focus-icon":
+                # 国策图标：从游戏 DDS 转 PNG（转一次缓存），浏览器显示不了 DDS
+                img = wiki.focus_icon(CTX.cfg.get("gameRoot") or "", q.get("n") or "")
+                if img and os.path.isfile(img):
+                    try:
+                        with open(img, "rb") as f:
+                            data = f.read()
+                        self._send(200, data, "image/png",
+                                   {"Cache-Control": "public, max-age=604800"})
+                    except Exception:
+                        self._send(404, b"", "image/png")
+                else:
+                    self._send(404, b"", "image/png")
+                return
             self._send(404, b"not found", "text/plain")
         except Exception:
             self._json({"ok": False, "error": traceback.format_exc(limit=3)}, 500)

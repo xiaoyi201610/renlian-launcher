@@ -17,6 +17,7 @@ __pycache__/
 # ---- 缓存与玩家自己的记录 ----
 .edge-profile/
 achievement_icons/
+hoi4_focus_icons/
 achievement_data_*.json
 achievement_global_*.json
 dlc_data_*.json
@@ -36,6 +37,8 @@ mod-source-overrides.json
 /_t*.png
 /ck3-regress.png
 /sl-*.png
+/hoi4-shot.png
+/hoi4-*.png
 /innov-*.png
 /tenet-shot.png
 .workbuddy/

@@ -30,6 +30,7 @@ except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import stellaris                        # 群星百科（独立模块，按 game 分派）
+import hoi4                             # 钢铁雄心百科（独立模块，按 game 分派）
 
 WIKI_VER = 36                            # 解析逻辑变更时 +1，强制重建旧缓存
 
@@ -105,7 +106,7 @@ CATEGORIES = [
 ]
 
 # 目前只有 CK3 与群星有对应脚本结构；其他游戏返回 supported=false
-SUPPORTED_GAMES = {"ck3", "stellaris"}
+SUPPORTED_GAMES = {"ck3", "stellaris", "hoi4"}
 
 # 界面语言 → 游戏本地化目录
 LANG_MAP = {
@@ -1641,6 +1642,32 @@ def _cache_path(game: str, loc_lang: str) -> str:
     return os.path.join(APP_DIR, "wiki_cache_%s_%s.json" % (game, loc_lang))
 
 
+def focus_tree(game: str, game_root: str, tid: str, ui_lang: str = "zh") -> dict:
+    """单棵国策树的完整节点（前端切树时才拉，避免首屏塞 5MB）。"""
+    game = (game or "").lower()
+    if game != "hoi4":
+        return {"ok": False, "error": "unsupported"}
+    if not hoi4._FOCUS:
+        try:
+            hoi4.load(game_root, ui_lang, False)     # 冷启动时先构建/读缓存
+        except Exception:
+            pass
+    t = hoi4.focus_tree(tid)
+    if not t:
+        return {"ok": False, "error": "not found"}
+    d = dict(t)
+    d["ok"] = True
+    return d
+
+
+def focus_icon(game_root: str, gfx_name: str) -> str:
+    """国策图标 PNG 路径（DDS 按需转换 + 缓存）。"""
+    try:
+        return hoi4.focus_icon_png(game_root, gfx_name)
+    except Exception:
+        return ""
+
+
 def _scripts_root(game_root: str) -> str:
     """CK3 的脚本在 `<安装目录>\\game\\` 下；也兼容直接指向该层的情况。"""
     game_root = (game_root or "").strip()
@@ -1658,6 +1685,9 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
     if game == "stellaris":
         # 群星是另一套脚本结构（civics / traditions / technology…），交给独立模块
         return stellaris.load(game_root, ui_lang, force)
+    if game == "hoi4":
+        # 钢铁雄心：理念 / 顾问与特质 / 国策树，结构与上面两个都不一样
+        return hoi4.load(game_root, ui_lang, force)
     if game not in SUPPORTED_GAMES:
         return {"ok": True, "supported": False, "game": game, "maa": [], "cultures": [],
                 "traditions": [], "religions": [], "tenets": [], "doctrines": [],
