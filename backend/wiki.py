@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 28                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 29                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 勋号兵种（any_accolade）里 accolade_attribute_level 的 type 取值全集：
 # 部分是 _attribute 后缀的勋号属性键（在 accolades 本地化里有中文名），
@@ -79,6 +79,7 @@ D_RELIGION = os.path.join("common", "religion", "religion_types")
 D_TENET = os.path.join("common", "religion", "tenet_types")
 D_DOCTRINE = os.path.join("common", "religion", "doctrine_types")
 D_INNOV = os.path.join("common", "culture", "innovations")
+D_LEGACY = os.path.join("common", "dynasty_legacies")
 
 # 百科分类注册表：以后加新分类，写一个 _collect_xxx() 并在这里登记即可
 CATEGORIES = [
@@ -655,14 +656,52 @@ def _resolve_name(name: str, loc: dict) -> str:
     return name
 
 
+def _unlock_prefix(kind: str, zh: bool) -> str:
+    """解锁授予者种类 → 招募条件前缀。"""
+    if kind == "tradition":
+        return "需要传统：" if zh else "Requires tradition: "
+    if kind == "innovation":
+        return "需要革新：" if zh else "Requires innovation: "
+    if kind == "dynasty_legacy":
+        return "需要家族传承：" if zh else "Requires dynasty legacy: "
+    return ""
+
+
+def _legacy_blocks(text: str) -> list:
+    """从 dynasty_legacies 文件抽取 `dynasty_legacy = { KEY = { ... } }` 块（嵌套在 category 下）。"""
+    out = []
+    pat = re.compile(r"dynasty_legacy\s*=\s*\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\{")
+    i = 0
+    n = len(text)
+    while i < n:
+        m = pat.search(text, i)
+        if not m:
+            break
+        key = m.group(1)
+        start = m.end()
+        d, j = 1, start
+        while j < n and d > 0:
+            c = text[j]
+            if c == "{":
+                d += 1
+            elif c == "}":
+                d -= 1
+            j += 1
+        out.append((key, text[start:j - 1]))
+        i = j
+    return out
+
+
 def _load_unlock_maa(game_root: str, loc: dict):
-    """扫描 traditions + innovations，建立两套解锁映射（见上方全局变量说明）。
+    """扫描 traditions + innovations + dynasty_legacies，建立两套解锁映射（见上方全局变量说明）。
 
     文化兵种的解锁有两类写法：
       - 参数写法：传统里 `unlock_maa_<x> = yes`，兵种 can_recruit 用
         `valid_for_maa_trigger = { PARAMETER = unlock_maa_<x> }`
       - 等号写法：革新里 `unlock_maa = <x>`（如 innovation_caballeros 解锁 caballero），
         兵种本身常无 can_recruit 块，纯靠该革新（并可能带 region 地区限定）解锁
+    家族传承（dynasty_legacy）也能解锁兵种：legacy 块里写 `unlock_maa = <x>` 或 `unlock_maa_<x> = yes`，
+    如家族近卫（house_guard）由『家族近卫』家族传承解锁 → 显示『需要家族传承：家族近卫』。
     本地化里 `culture_parameter_unlock_maa_<x>` 的原文是『可以招募[GetMaA('x').GetName]兵士』，
     纯属废话，不能当条件显示。
     """
@@ -707,25 +746,44 @@ def _load_unlock_maa(game_root: str, loc: dict):
                 for tok in set(re.findall(r"unlock_[A-Za-z0-9_]+", body)):
                     if re.search(r"\b%s\s*=\s*yes\b" % re.escape(tok), body):
                         add_token(tok, kind, name)
+    def scan_legacy():
+        for f in sorted(glob.glob(os.path.join(game_root, D_LEGACY, "*.txt"))):
+            try:
+                text = _read(f)
+            except Exception:
+                continue
+            for key, body in _legacy_blocks(text):
+                if "unlock_" not in body:
+                    continue
+                name = _resolve_name(loc.get(key) or loc.get(key + "_name") or _title(key), loc)
+                # 等号写法 unlock_maa = <x>
+                for mk in re.findall(r"unlock_maa\s*=\s*([a-z_0-9]+)", body):
+                    add_token("unlock_maa_" + mk, "dynasty_legacy", name)
+                    add_key(mk, "dynasty_legacy", name, None)
+                # 参数写法 unlock_maa_<x> = yes
+                for tok in re.findall(r"unlock_maa_([A-Za-z0-9_]+)", body):
+                    if re.search(r"\bunlock_maa_%s\s*=\s*yes\b" % re.escape(tok), body):
+                        add_token("unlock_maa_" + tok, "dynasty_legacy", name)
+                        add_key(tok, "dynasty_legacy", name, None)
     scan(D_TRAD, "tradition")
     scan(D_INNOV, "innovation")
+    scan_legacy()
     return token_map, key_map
 
 
 def _maa_unlock_extra(key: str, zh: bool, maa_name: str = "") -> list:
-    """文化兵种即使没有 can_recruit 块，也可能由某革新/传统解锁（并带地区限定）。
-    返回补充的招募条件：『需要革新/传统：X』+ 『限定地区：Y』。
-    若授予者名与兵种自身名相同（如 caballero 的革新就叫『伊比利亚骑手』）则跳过，避免重复。"""
+    """文化兵种即使没有 can_recruit 块，也可能由某革新/传统/家族传承解锁（并带地区限定）。
+    返回补充的招募条件：『需要革新/传统/家族传承：X』+ 『限定地区：Y』。
+    若授予者名与兵种自身名相同（如 caballero 的革新就叫『伊比利亚骑手』）则跳过，避免重复；
+    但家族传承即使同名也要保留（『需要家族传承：家族近卫』本身即有信息量）。"""
     e = MAA_UNLOCK.get(key)
     if not e:
         return []
     out = []
     for kind, name in e["grantors"]:
-        if name == maa_name:
+        if kind != "dynasty_legacy" and name == maa_name:
             continue
-        pre = ("需要传统：" if kind == "tradition" else "需要革新：") if zh \
-               else ("Requires tradition: " if kind == "tradition" else "Requires innovation: ")
-        out.append(pre + name)
+        out.append(_unlock_prefix(kind, zh) + name)
     if e["region"]:
         out.append(("限定地区：" if zh else "Restricted region: ") + _region_name(e["region"], zh))
     return out
@@ -757,9 +815,7 @@ def _recruit_reqs(body: str, loc: dict, zh: bool = True) -> list:
         got = UNLOCK_MAA.get(p)
         if got:
             for kind, name in got:
-                pre = ("需要传统：" if kind == "tradition" else "需要革新：") if zh \
-                       else ("Requires tradition: " if kind == "tradition" else "Requires innovation: ")
-                add(pre + name)
+                add(_unlock_prefix(kind, zh) + name)
         else:
             t = loc.get("culture_parameter_" + p) or loc.get(p + "_name") or loc.get(p)
             if t and "可以招募" not in (t or ""):
@@ -806,9 +862,7 @@ def _recruit_reqs(body: str, loc: dict, zh: bool = True) -> list:
             got = UNLOCK_MAA.get(p)
             if got:
                 for kind, name in got:
-                    pre = ("需要传统：" if kind == "tradition" else "需要革新：") if zh \
-                           else ("Requires tradition: " if kind == "tradition" else "Requires innovation: ")
-                    add(pre + name)
+                    add(_unlock_prefix(kind, zh) + name)
                 continue
         t = loc.get("culture_parameter_" + p) or loc.get(p + "_name")
         if t and "可以招募" not in (t or ""):
