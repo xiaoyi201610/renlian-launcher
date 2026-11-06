@@ -39,7 +39,7 @@ try:
 except Exception:
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-H4_VER = 4                      # 解析逻辑变更时 +1，强制重建缓存
+H4_VER = 10                      # 解析逻辑变更时 +1，强制重建缓存
 
 LANG_MAP = {
     "zh": "simp_chinese", "en": "english", "fr": "french",
@@ -595,6 +595,20 @@ def _mod_block(body, loc=None):
         return out
     for k, v in re.findall(r"([A-Za-z0-9_]+)\s*=\s*(-?\d+(?:\.\d+)?)", body):
         out.append(_mod_line(k, v))
+    # 效果写成自定义文案的情况（`custom_modifier_tooltip = xxx_tt`）：
+    # 游戏里就是在悬浮框显示一段文字，数值全在那段本地化里，单看脚本取不到，
+    # 所以直接把那段文案搬过来当效果行。全库 ideas 里有 183 处这么写。
+    if loc:
+        for ck in re.findall(r"custom_modifier_tooltip\s*=\s*([A-Za-z0-9_]+)", body):
+            txt = _L(loc, ck)
+            if not txt:
+                continue
+            # 这类文案常是多行列表（「- xxx\n- yyy」），列表项里显示不了换行，
+            # 用分号连起来读着还算顺；句末已经是句号的就不再补分号
+            txt = re.sub(r"([。！？；.!?;])\s*\n+\s*", r"\1", txt)
+            txt = re.sub(r"\s*\n+\s*", "；", txt).strip("； ")
+            if txt and txt not in out:
+                out.append(txt)
     return out
 
 
@@ -611,7 +625,7 @@ def _equip_bonus_lines(body: str, loc: dict) -> list:
     """设计商的 `equipment_bonus = { <装备> = { build_cost_ic = -0.1 } }`。"""
     out = []
     for eq, eb in _top_blocks(body or ""):
-        lines = _mod_block(eb)
+        lines = _mod_block(eb, loc)
         nm = _equip_name(eq, loc)
         for ln in lines:
             out.append("%s：%s" % (nm, ln))
@@ -631,6 +645,65 @@ CAT_FALLBACK = {
     "conscription_laws": "征兵法案",
     "land": "陆军将领",
     "operative": "特工",
+}
+
+# 脚本里留的测试条目，游戏里不会正常出现，百科也不收
+IDEA_SKIP = {"FIN_test", "ITA_test", "MTG_TEST_NAVAL_IDEA"}
+
+# 这 48 条游戏自己的本地化是运行时取值（写成 `[GER.GetBulwarkName]` 这种取脚本结果的
+# 表达式，静态读不到内容），或者干脆没登记键 —— 界面上就会漏出一串原始 key。
+# 数量固定、都是有名有姓的条目，手工补中文名最省事，也避免以后再冒裸键。
+IDEA_NAME_FIX = {
+    # 国家精神
+    "GER_bulwark_against_bolshevism": "反布尔什维克壁垒",
+    "special_economic_zones": "特别经济区",
+    "AST_no_foreign_battlefields_idea_2": "不在海外流血",
+    "AST_monarchist_intervention_spirit": "君主派干预精神",
+    "idea_RAJ_growing_independence_movement_0": "日益壮大的独立运动",
+    "idea_RAJ_growing_independence_movement_1": "独立运动愈演愈烈",
+    "idea_RAJ_to_shake_the_world": "震撼世界",
+    "CHI_obsolete_fortifications": "过时的防御工事",
+    "CHI_local_suppliers": "本地供应商",
+    "CZE_strike_at_the_heart_of_bolshevism_idea": "直击布尔什维克心脏",
+    "GRE_memories_of_the_anatolian_catastrophe": "安纳托利亚灾难的记忆",
+    "GRE_cooperate_with_foreign_monopolies_spirit": "与外国垄断资本合作",
+    "GRE_protectors_of_the_mediterranean_spirit": "地中海守护者",
+    "GRE_improving_our_defensive_lines": "加固我们的防线",
+    "idea_INS_radio_democratic": "广播电台：民主派",
+    "idea_INS_radio_fascist": "广播电台：法西斯派",
+    "idea_INS_radio_communist": "广播电台：共产派",
+    "idea_INS_radio_sukarno": "广播电台：苏加诺",
+    "ITA_the_fight_against_stalinism": "对抗斯大林主义",
+    "NOR_mobile_government_ns": "流动政府",
+    "idea_PAR_prevent_total_state_bankcruptcy": "避免国家彻底破产",
+    "idea_GUYA_weapons_licensing": "武器生产许可",
+    "SWE_small_scale_strikes": "小规模罢工",
+    "SWE_political_commisars": "政治委员",
+    "TUR_debt_repayments": "偿还外债",
+    "YUG_idea_princess_alexandrine_britain": "亚历山德琳公主：英国",
+    "YUG_idea_princess_alexandra_germany": "亚历山德拉公主：德国",
+    "YUG_idea_princess_marie_italy": "玛丽公主：意大利",
+    # 工业企业与设计商
+    "GER_reichswerke": "帝国工厂",
+    "GER_reichswerke_improved": "帝国工厂（扩建）",
+    "GER_reichswerke_improved_2": "帝国工厂（再次扩建）",
+    "ARG_rubin_design_bureau": "鲁宾设计局",
+    "AST_kirov": "基洛夫工厂",
+    "BEL_kirov": "基洛夫工厂（比利时）",
+    "ETH_cie": "埃塞俄比亚铁路公司",
+    "machinefabriek_braat": "布拉特机械厂",
+    "nsm_amsterdam_ins": "阿姆斯特丹航运公司",
+    "artillerie_inrichtingen_ins": "炮兵器材厂",
+    "artillerie_inrichtingen_pyrotechnische": "烟火器材厂",
+    "bio_pharma": "生物制药公司",
+    "fokker_ins": "福克飞机厂",
+    "idea_INS_royal_dutch_shell_concern": "荷兰皇家壳牌",
+    "idea_INS_bank_of_java_concern": "爪哇银行",
+    "idea_INS_telkom_indonesia_concern": "印尼电信公司",
+    "idea_INS_staatspoorwegen_ss_concern": "荷兰国家铁路",
+    "germano_mexican_tanks": "德墨坦克合作",
+    "russo_mexican_tanks": "俄墨坦克合作",
+    "american_mexican_tanks": "美墨坦克合作",
 }
 
 
@@ -690,7 +763,7 @@ def _scan_ideas(root: str, loc: dict):
                     desc = _L(loc, key + "_desc")
                     effects = []
                     if mod:
-                        effects += _mod_block(mod)
+                        effects += _mod_block(mod, loc)
                     rb = subs.get("research_bonus")
                     if rb:
                         for rk, rv in re.findall(
@@ -703,7 +776,7 @@ def _scan_ideas(root: str, loc: dict):
                     for sub_key in ("targeted_modifier", "research_bonus_air", "rule"):
                         sb = subs.get(sub_key)
                         if sb:
-                            effects += _mod_block(sb)
+                            effects += _mod_block(sb, loc)
                     attrs = []
                     cost = scal.get("cost")
                     if cost:
@@ -711,9 +784,36 @@ def _scan_ideas(root: str, loc: dict):
                     rcost = scal.get("removal_cost")
                     if rcost and rcost not in ("-1", "0"):
                         attrs.append({"label": "移除花费", "value": rcost})
+                    disp = _flatten(_L(loc, name))
+                    # 块内 `name = xxx` 指向的键常常没有本地化（游戏自己的疏漏，
+                    # 如 `NOR_crush_stalin_ns` 写 `name = NOR_crush_stalin`，
+                    # 而中文只登记了前者），这时退回用条目 key 再查一次。
+                    if not disp and name != key:
+                        disp = _flatten(_L(loc, key))
+                    if not disp:
+                        disp = IDEA_NAME_FIX.get(key, "")
+                    if key in IDEA_SKIP:
+                        continue
+                    # 「国家理念」里不收录三类条目：
+                    # ① 通用顾问槽位（`ADU_democratic_guy` 这种）：脚本里只写 picture 和
+                    #    traits，人名是运行时从随机名池生成的，本地化里当然没有键，
+                    #    效果也全挂在特质上。这类条目在「军官团与顾问」页有正经版本，
+                    #    放进「国家理念」只会显示成一串原始键（顾问分组 984 条里 941 条如此）。
+                    # ② 游戏内部的占位条目（如 `SWE_historical_trade_with_Germany_dummy`）：
+                    #    只有 allowed 和图片，没名字没说明没效果。
+                    # ③ 名字实在查不到、手工表里也没有的：宁可先不显示，也不给用户看裸键。
+                    if IDEA_CAT_GROUP.get(cat) == "advisor" and not effects and not disp:
+                        continue
+                    if (not effects and not disp and not desc
+                            and not traits and key.endswith("_dummy")):
+                        continue
+                    if not effects and not disp and not desc and not traits:
+                        continue
+                    if not disp:
+                        continue
                     items.append({
                         "key": key,
-                        "name": _flatten(_L(loc, name)) or key,
+                        "name": disp or key,
                         "desc": desc,
                         "cat": cat_label,
                         "catKey": cat,
@@ -721,6 +821,8 @@ def _scan_ideas(root: str, loc: dict):
                         "attrs": attrs,
                         "links": [],
                         "traits": [_L(loc, t) or t for t in traits],
+                        # 原始特质 key，供 _build 里回填效果用（回填完会删掉，不下发前端）
+                        "traitKeys": list(traits),
                     })
     return items, idx
 
@@ -760,6 +862,23 @@ TRAIT_SKIP = {
     "prerequisites", "gain_xp", "gain_xp_leader", "special_force",
 }
 
+# 这几个特质游戏自己没登记中文键（连英文都没有），游戏内也会显示成原始键。
+# 数量很少，手工补上，免得「军官团与顾问」里混进一串英文下划线。
+TRAIT_NAME_FIX = {
+    "ww_one_trauma": "一战创伤",
+    "tenacious_defender": "顽强防御者",
+    "political_prisoner": "政治犯",
+    "assassination_survivor": "暗杀幸存者",
+    "union_man": "工会分子",
+    "SWE_former_autocrat_upgraded": "前独裁者（转型后）",
+    "personal_union_trait": "共主联邦",
+    "light_aircraft_manufacturer_3": "轻型飞机制造商（三级）",
+    "fast_tank_manufacturer_2": "快速坦克制造商（二级）",
+    "infantry_tank_manufacturer_2": "步兵坦克制造商（二级）",
+    "CZE_exiled_president": "流亡总统",
+    "INS_secret_commander": "秘密指挥官",
+}
+
 
 def _trait_item(key: str, body: str, loc: dict, kind: str):
     typ = _val(body, "type") or "all"
@@ -783,7 +902,7 @@ def _trait_item(key: str, body: str, loc: dict, kind: str):
                     "field_marshal_modifier", "sub_unit_modifiers"):
         sb = _top_sub(body, sub_key)
         if sb:
-            effects += _mod_block(sb)
+            effects += _mod_block(sb, loc)
     # 文案型效果：custom_effect_tooltip 直接指向本地化键
     for tip_key in ("custom_effect_tooltip", "override_effect_tooltip"):
         tip = _val(body, tip_key)
@@ -801,7 +920,7 @@ def _trait_item(key: str, body: str, loc: dict, kind: str):
         attrs.insert(0, {"label": "类别", "value": UL_TRAIT_TYPE.get(ttype, ttype)})
     return {
         "key": key,
-        "name": _flatten(_L(loc, key)) or key,
+        "name": _flatten(_L(loc, key)) or TRAIT_NAME_FIX.get(key) or key,
         "desc": _L(loc, key + "_desc"),
         "cat": cat,
         "catKey": cat_key,
@@ -880,7 +999,7 @@ def _scan_advisors(root: str, loc: dict, idea_idx: dict, trait_fx: dict):
                         effects.append("【%s】%s" % (fx["name"], _flatten(fx["desc"])))
                     effects += fx["effects"]
                 if idea.get("modifier"):
-                    effects += _mod_block(idea["modifier"])
+                    effects += _mod_block(idea["modifier"], loc)
                 attrs = [{"label": "槽位", "value": SLOT_LABEL.get(slot, slot)}]
                 if idea.get("cost"):
                     attrs.append({"label": "政治点数花费", "value": idea["cost"]})
@@ -1251,6 +1370,22 @@ def _build(root: str, loc_lang: str) -> dict:
     trait_fx = {t["key"]: t for t in traits}
     advisors = _scan_advisors(root, loc, idea_idx, trait_fx)
     trees = _scan_focus(root, loc, idea_idx)
+
+    # 有些顾问型理念（如白俄罗斯那批 `BLR_boris_berman`）自己没有 modifier，
+    # 效果全写在 `traits = { prince_of_terror }` 上，只按理念本体取会显示成「无效果」。
+    # 这里沿着 traits → 特质效果再展开一次，等 trait_fx 建好之后补。
+    for it in ideas:
+        if it["effects"]:
+            continue
+        for t in it.pop("traitKeys", []):
+            fx = trait_fx.get(t)
+            if not fx:
+                continue
+            if fx["desc"]:
+                it["effects"].append("【%s】%s" % (fx["name"], _flatten(fx["desc"])))
+            it["effects"] += fx["effects"]
+    for it in ideas:
+        it.pop("traitKeys", None)
 
     # 「军官团与顾问」= 顾问（按槽位）+ 特质（将领/领袖）
     officers = advisors + traits

@@ -281,7 +281,7 @@ const I18N_DICT = {
     'wiki.countersTo': '克制（对其伤害提升）',
     'wiki.counteredBy': '被克制（受其压制）',
     'wiki.effects': '效果',
-    'wiki.noEffects': '该传统没有可直接展示的数值效果，具体以游戏内为准。',
+    'wiki.noEffects': '这一项没有可直接展示的数值效果，具体以游戏内为准。',
     'wiki.coreEffects': '核心效果',
     'wiki.personalEffects': '个人教义效果',
     'wiki.personalSameAsCore': '该信条的个人教义效果与核心效果相同。',

@@ -224,6 +224,44 @@ def main():
             f.write(base64.b64decode(data))
         print("\n✓ 已保存 " + out)
 
+    # 回到「国家理念」页复核：不能有裸键（`SWE_xxx_dummy` 那类），
+    # 顾问型理念（效果只写在 traits 上）要能看到展开后的效果
+    c.js("document.querySelector('.wk-tab[data-tab=\"ideas\"]').click(); 'ok'")
+    time.sleep(0.6)
+    bare = c.js("""(() => {
+        const bad = [];
+        document.querySelectorAll('.wk-row .wk-name').forEach(e => {
+            const t = (e.textContent || '').trim();
+            if (/^[A-Za-z0-9_]+$/.test(t) && t.includes('_')) bad.push(t);
+        });
+        return JSON.stringify({rows: document.querySelectorAll('.wk-row').length,
+                               bare: bad.length, sample: bad.slice(0, 5)});
+    })()""")
+    print("\n理念页裸键检查:", bare)
+
+    hit = c.js("""(() => {
+        const q = document.querySelector('#wkQ');
+        q.value = '鲍里斯'; q.dispatchEvent(new Event('input',{bubbles:true}));
+        return 'ok';
+    })()""")
+    time.sleep(0.8)
+    c.js("""(() => { const r = document.querySelector('.wk-row .wk-line');
+        if (r) r.click(); return 'ok'; })()""")
+    time.sleep(0.5)
+    print("顾问型理念展开:", c.js("""(() => {
+        const r = document.querySelector('.wk-row.open');
+        if (!r) return 'no-open';
+        return JSON.stringify({
+            name: (r.querySelector('.wk-name')||{}).textContent,
+            eff: Array.from(r.querySelectorAll('.wk-eff li')).map(x=>x.textContent).slice(0,5)});
+    })()"""))
+    shot = c.call("Page.captureScreenshot", {"format": "png"})
+    data = shot.get("result", {}).get("data")
+    if data:
+        with open(os.path.join(HERE, "hoi4-ideas.png"), "wb") as f:
+            f.write(base64.b64decode(data))
+        print("✓ 已保存 hoi4-ideas.png")
+
     try:
         proc.terminate()
         httpd.shutdown()
