@@ -29,7 +29,24 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 25                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 26                            # 解析逻辑变更时 +1，强制重建旧缓存
+
+# 勋号兵种（any_accolade）里 accolade_attribute_level 的 type 取值全集：
+# 部分是 _attribute 后缀的勋号属性键（在 accolades 本地化里有中文名），
+# 部分直接是兵种类型名（heavy_infantry 等，靠 _type_name 兜底）。
+# 这里集中列出，构建时补扫进 loc，保证招募条件能显示中文属性名。
+ACCOLADE_ATTR_KEYS = (
+    "archer_attribute", "archer_cavalry", "archers", "camel_cavalry", "camelry_attribute",
+    "crossbowmen_attribute", "elephant_cavalry", "elephantry_attribute", "gunpowder",
+    "gunpowder_attribute", "heavy_cavalry", "heavy_infantry", "horse_archer_attribute",
+    "lancer_attribute", "light_cavalry", "outrider_attribute", "pike_attribute", "pikemen",
+    "skirmisher_attribute", "skirmishers", "vanguard_attribute",
+)
+
+# unlock_maa_<x> token → 授予它的传统/革新名列表 [(kind, name)]，构建时填充。
+# 文化兵种的 can_recruit 用 valid_for_maa_trigger = { PARAMETER = unlock_maa_<x> }，
+# 该参数由某个传统/革新授予 —— 这才是真正的解锁条件（而非本地化那句废话『可以招募X兵士』）。
+UNLOCK_MAA = {}
 
 # 目录名（相对 gameRoot）
 D_MAA = os.path.join("common", "men_at_arms_types")
@@ -580,8 +597,47 @@ def _load_cost_values(game_root: str) -> dict:
     return out
 
 
+def _accolade_attr_name(t: str, loc: dict, loc_lang: str) -> str:
+    """勋号属性类型名：优先本地化键（archer_attribute → 弓箭手），
+    否则按兵种类型名兜底（heavy_infantry → 重步兵），都没有退回原始键。"""
+    v = loc.get(t)
+    if v and not _looks_raw(v, t):
+        return v
+    tn = _type_name(t, loc, loc_lang)
+    if tn and tn != t:
+        return tn
+    return t
+
+
+def _load_unlock_maa(game_root: str, loc: dict) -> dict:
+    """扫描 traditions + innovations，建立 unlock_maa_<x> token → 授予它的传统/革新名。
+
+    文化兵种的 can_recruit 用 `valid_for_maa_trigger = { PARAMETER = unlock_maa_<x> }`，
+    该参数由某个传统（或革新）授予 —— 这才是真正的解锁条件。
+    本地化里 `culture_parameter_unlock_maa_<x>` 的原文是『可以招募[GetMaA('x').GetName]兵士』，
+    纯属废话（等于说"可以招募这个兵种"），不能当条件显示。
+    """
+    out = {}
+    def scan(folder, kind):
+        for f in sorted(glob.glob(os.path.join(game_root, folder, "*.txt"))):
+            try:
+                text = _read(f)
+            except Exception:
+                continue
+            for key, body in _top_blocks(text):
+                if "unlock_" not in body:
+                    continue
+                for tok in set(re.findall(r"unlock_[A-Za-z0-9_]+", body)):
+                    if re.search(r"\b%s\s*=\s*yes\b" % re.escape(tok), body):
+                        name = loc.get(key) or loc.get(key + "_name") or _title(key)
+                        out.setdefault(tok, []).append((kind, name))
+    scan(D_TRAD, "tradition")
+    scan(D_INNOV, "innovation")
+    return out
+
+
 def _recruit_reqs(body: str, loc: dict, zh: bool = True) -> list:
-    """把 can_recruit 条件块翻译成可读的中文招募要求。"""
+    """把 can_recruit 条件块翻译成可读的具体解锁条件。"""
     cr = _sub(body, "can_recruit") or ""
     if not cr:
         return []
@@ -591,9 +647,44 @@ def _recruit_reqs(body: str, loc: dict, zh: bool = True) -> list:
         if t and t not in out:
             out.append(t)
 
-    # 文化参数解锁（最常见）：valid_for_maa_trigger = { PARAMETER = unlock_maa_xxx }
+    # 文化/特殊兵种：valid_for_maa_trigger = { PARAMETER = unlock_<x> }
+    #   <x> 由某个传统/革新授予 → 显示「需要传统/革新：X」，而不是废话『可以招募X兵士』
+    for p in re.findall(r"PARAMETER\s*=\s*(unlock_[A-Za-z0-9_]+)", cr):
+        got = UNLOCK_MAA.get(p)
+        if got:
+            for kind, name in got:
+                pre = ("需要传统：" if kind == "tradition" else "需要革新：") if zh \
+                       else ("Requires tradition: " if kind == "tradition" else "Requires innovation: ")
+                add(pre + name)
+        else:
+            t = loc.get("culture_parameter_" + p) or loc.get(p + "_name") or loc.get(p)
+            if t and "可以招募" not in (t or ""):
+                add(t)
+    # 其他文化参数（非 unlock_，通常是文化特性开关）
     for p in re.findall(r"PARAMETER\s*=\s*([A-Za-z0-9_]+)", cr):
-        add(loc.get("culture_parameter_" + p) or loc.get(p + "_name") or loc.get(p))
+        if p.startswith("unlock_"):
+            continue
+        t = loc.get("culture_parameter_" + p) or loc.get(p + "_name") or loc.get(p)
+        if t and "可以招募" not in (t or ""):
+            add(t)
+    # 勋号兵种：any_accolade = { accolade_attribute_level = { type = X level >= N } }
+    accolade_hit = False
+    for al in (_sub_all(cr, "accolade_attribute_level") or []):
+        t = _val(al, "type")
+        if not t:
+            continue
+        nm = _accolade_attr_name(t, loc, "simp_chinese" if zh else "english")
+        lvl = None
+        m = re.search(r"level\s*>=\s*(\d+)", al)
+        if not m:
+            m = re.search(r"level\s*=\s*(\d+)", al)
+        if m:
+            lvl = int(m.group(1))
+        s = ("需要勋号：" if zh else "Requires accolade: ") + nm
+        if lvl is not None:
+            s += ("（属性等级 ≥ %d）" % lvl) if zh else (" (attribute level ≥ %d)" % lvl)
+        add(s)
+        accolade_hit = True
     # 革新
     for i in re.findall(r"has_innovation\s*=\s*([a-z_0-9]+)", cr):
         t = loc.get(i + "_name") or loc.get(i)
@@ -603,14 +694,25 @@ def _recruit_reqs(body: str, loc: dict, zh: bool = True) -> list:
     for nb in _sub_all(cr, "NOT"):
         for p in re.findall(r"has_cultural_parameter\s*=\s*([a-z_0-9]+)", nb):
             t = loc.get("culture_parameter_" + p) or loc.get(p + "_name")
-            if t:
+            if t and "可以招募" not in (t or ""):
                 add(("不可拥有：" if zh else "Must not have: ") + t)
     # 正向文化参数（排除整个 NOT 块，含嵌套，避免与「不可拥有」重复）
     cr_pos = cr
     for nb in (_sub_all(cr, "NOT") or []):
         cr_pos = cr_pos.replace(nb, "")
     for p in re.findall(r"has_cultural_parameter\s*=\s*([a-z_0-9]+)", cr_pos):
-        add(loc.get("culture_parameter_" + p) or loc.get(p + "_name"))
+        # unlock_<x> 由传统/革新授予 → 显示「需要传统/革新：X」，而不是废话『可以招募X兵士』
+        if p.startswith("unlock_"):
+            got = UNLOCK_MAA.get(p)
+            if got:
+                for kind, name in got:
+                    pre = ("需要传统：" if kind == "tradition" else "需要革新：") if zh \
+                           else ("Requires tradition: " if kind == "tradition" else "Requires innovation: ")
+                    add(pre + name)
+                continue
+        t = loc.get("culture_parameter_" + p) or loc.get(p + "_name")
+        if t and "可以招募" not in (t or ""):
+            add(("需文化特性：" if zh else "Requires cultural pillar: ") + t)
     # 政体
     for g in re.findall(r"has_government\s*=\s*([a-z_0-9]+)", cr):
         t = loc.get(g) or loc.get(g + "_name")
@@ -621,17 +723,19 @@ def _recruit_reqs(body: str, loc: dict, zh: bool = True) -> list:
         "culture_uses_eastern_siege_weapons_trigger": ("仅限东方攻城器械文化", "Eastern siege weapons culture only"),
         "is_landless_adventurer": ("仅限无地冒险者", "Landless adventurer only"),
         "mpo_can_recruit_nomad_maa_trigger": ("需游牧制（斡儿朵）", "Requires nomadic government"),
-        "any_accolade": ("需要对应勋章属性", "Requires an appropriate accolade"),
     }
     for k, pair in special.items():
         if k in cr:
             add(pair[0] if zh else pair[1])
+    # 兜底：any_accolade 但没解析出具体属性
+    if "any_accolade" in cr and not accolade_hit:
+        add(("需要对应勋号/勋章", "Requires an appropriate accolade") if zh else "Requires an appropriate accolade")
     # 王朝 perk
     for p in re.findall(r"has_dynasty_perk\s*=\s*([a-z_0-9]+)", cr):
         t = loc.get(p) or loc.get(p + "_name")
         if t:
             add(("需要王朝传承：" if zh else "Dynasty perk: ") + t)
-    return out[:6]
+    return out[:8]
 
 
 def _type_aliases(raw: dict, zh: bool = True) -> dict:
@@ -1352,6 +1456,9 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
                         needed.update((dk, dk + "_name"))
 
         raw = _scan_loc(loc_dir, needed, WIDE_PREFIXES)
+        # 勋号兵种属性名（archer_attribute → 弓箭手 等）默认不在 needed/WIDE 里，
+        # 显式补扫，保证招募条件能显示中文属性名。
+        raw.update(_scan_loc(loc_dir, set(ACCOLADE_ATTR_KEYS), ()))
         _trait_aliases(game_root, raw)   # hajjaj → 朝觐者 这类特质别名
         _type_aliases(raw, loc_lang == "simp_chinese")   # heavy_infantry → 重步兵（自引用键）
 
@@ -1374,9 +1481,11 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
         loc = _finalize(raw, sv, zh)
 
         # 2) 正式抽取（脚本值表要先算，效果里会引用）
-        global _SV_NUM
+        global _SV_NUM, UNLOCK_MAA
         costs = _load_cost_values(game_root)
         _SV_NUM = costs
+        # 文化兵种招募解锁：unlock_maa_<x> 参数由各传统/革新授予，反向建表
+        UNLOCK_MAA = _load_unlock_maa(game_root, loc)
         traditions, trad_map = _collect_traditions(game_root, loc, zh)
         maa = _collect_maa(game_root, loc, loc_lang, costs)
         cultures = _collect_cultures(game_root, loc, trad_map)
