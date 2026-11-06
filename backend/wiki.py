@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 33                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 35                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 勋号兵种（any_accolade）里 accolade_attribute_level 的 type 取值全集：
 # 部分是 _attribute 后缀的勋号属性键（在 accolades 本地化里有中文名），
@@ -267,14 +267,21 @@ STAT_NAMES = {
     "siege_value": ("攻城","Siege"), "stack": ("规模","Stack"),
 }
 
-def _custom_name(key: str, zh: bool = True) -> str:
+def _custom_name(key: str, zh: bool = True, loc: dict | None = None) -> str:
     m = re.fullmatch(r"unlock_siege_maa_(first|second|third|fourth)_level", key)
     if m:
         cn = {"first": "一", "second": "二", "third": "三", "fourth": "四"}[m.group(1)]
         en = {"first": 1, "second": 2, "third": 3, "fourth": 4}[m.group(1)]
         return ("解锁第%s级地域攻城器械兵士" % cn) if zh else ("Unlocks tier %d regional siege men-at-arms" % en)
+    # eligible_accolade_camelry_attribute → 骆驼骑兵（accolades 本地化里就有这个键）
     if key.startswith("eligible_accolade_") and key.endswith("_attribute"):
-        return "可授予对应勋章属性" if zh else "Grants access to an accolade attribute"
+        attr = key[len("eligible_accolade_"):]
+        nm = ""
+        if loc:
+            nm = loc.get(attr) or loc.get(attr + "_name") or loc.get(attr + "_attribute") or ""
+        if nm:
+            return ("可授予%s勋号" if zh else "Grants access to %s accolades") % nm
+        return "可授予对应勋号" if zh else "Grants access to an accolade"
     return ""
 
 # `partners = { ... }` 里的键（婚姻类传统没有 parameters，效果全在这）
@@ -433,6 +440,13 @@ _ICON_PAT = re.compile(r"\[[a-z0-9_]+_i\]")                # 图标占位 [prest
 _MARK_PAT = re.compile(r"#[A-Za-z0-9_!]*")                 # 排版标记 #P #! #bold
 _SV_PAT = re.compile(r"\[EmptyScope\.ScriptValue\(\s*'([A-Za-z0-9_]+)'\s*\)\s*\|0\]")
 _GETTER_PAT = re.compile(r"Get[A-Za-z]+\(\s*['\"]?([A-Za-z0-9_\-]+)['\"]?\s*\)")
+# [GetBuilding('paddy_fields_01').GetTypeName|V] / [GetDomicileBuilding('silk_01').GetNameNoTooltip|V]
+_BLD_PAT = re.compile(
+    r"Get(Domicile)?Building\(\s*'([A-Za-z0-9_]+)'\s*\)(?:\.(GetTypeName|GetNameNoTooltip|GetName))?",
+    re.I)
+# [AddLocalizationIf( HasDlcFeature( 'accolades' ), 'xxx_ACCOLADES_DLC')] → 取里面那个键
+_ADDLOCIF_PAT = re.compile(
+    r"\[AddLocalizationIf\(\s*[^,\[\]]+,\s*'([A-Za-z0-9_.\-]+)'\s*\)\]")
 _VALUE_REF_PAT = re.compile(r"\$([A-Za-z0-9_]+)\|[^$]*\$")   # $OPINION|=V$ 这类数值占位
 
 # 数值占位：引擎现场算，这里给个可读名字而不是乱码
@@ -538,6 +552,27 @@ def _getter_name(key: str, raw: dict) -> str:
     return _title(key)
 
 
+def _building_name(key: str, getter: str, raw: dict) -> str:
+    """`GetBuilding('paddy_fields_01')` 这类：解成建筑中文名。
+
+    CK3 每条建筑线有两套名字：
+      building_type_<key> = 线名（paddy_fields_01 → 稻田）
+      building_<key>      = 该级个体名（paddy_fields_01 → 水田）
+    住所建筑（GetDomicileBuilding）多走 <key>_domicile_building（silk_01 → 小桑林）。
+    `.GetTypeName` 要线名，其余（GetName / GetNameNoTooltip）要个体名。
+    """
+    type_k = "building_type_" + key
+    inst_k = "building_" + key
+    dom_k = key + "_domicile_building"
+    order = ([type_k, inst_k, dom_k] if (getter or "").lower() == "gettypename"
+             else [inst_k, type_k, dom_k])
+    for k in order:
+        v = raw.get(k)
+        if v and not v.lstrip().startswith("["):
+            return v
+    return _title(key)
+
+
 def _resolve(text: str, raw: dict, sv: dict | None = None, depth: int = 3, zh: bool = True) -> str:
     """展开 $变量$、[概念|E]、[GetTrait('x')...] 与脚本值，丢掉算不出来的函数。"""
     if not text:
@@ -552,11 +587,23 @@ def _resolve(text: str, raw: dict, sv: dict | None = None, depth: int = 3, zh: b
         text = _REF_PAT.sub(rep, text)
     # 脚本值：[EmptyScope.ScriptValue('x')|0] → 脚本里定义的真实数字
     text = _SV_PAT.sub(lambda m: str(sv.get(m.group(1), "?")), text)
+    # [AddLocalizationIf( 条件, '键')] → 直接把那个键的文案展开进来
+    # （勋号类效果全是这层包着，不展开就只剩兜底废话）
+    if "AddLocalizationIf" in text:
+        def _addif(m):
+            v = raw.get(m.group(1))
+            if v and depth > 0:
+                return _resolve(v, raw, sv, depth - 1, zh)
+            return ""
+        text = _ADDLOCIF_PAT.sub(_addif, text)
     if "[" in text:
         def frep(m):
             s = m.group(0)
             if "GetTextIcon" in s or "GetIcon" in s:
                 return ""          # 图标函数不能展开成文字，否则「宫廷礼制宫廷礼制…」
+            bm = _BLD_PAT.search(s)
+            if bm:
+                return _building_name(bm.group(2), bm.group(3), raw)
             tm = _TRAIT_PAT.search(s)
             if tm:
                 return _trait_name(tm.group(1), raw)
@@ -577,7 +624,9 @@ def _ref_keys(text: str) -> set:
     for t in _TRAIT_PAT.findall(text):
         ks.update((t, "trait_" + t, "game_concept_" + t))
     for g in _GETTER_PAT.findall(text):
-        ks.update((g, g + "_name", "trait_" + g, "game_concept_" + g))
+        ks.update((g, g + "_name", "trait_" + g, "game_concept_" + g,
+                   "building_" + g, "building_type_" + g, g + "_domicile_building"))
+    ks.update(_ADDLOCIF_PAT.findall(text))
     ks.update("game_concept_" + k for k in list(ks))
     return ks
 
@@ -1353,7 +1402,7 @@ def _generic_effects(body: str, loc: dict, prefixes=(), zh=True, exclude_blocks=
         if nm:
             eff.append(("解锁：" if zh else "Unlocks: ") + nm)
     for c in re.findall(r"^\tcustom\s*=\s*([a-z_0-9]+)", body, re.M):
-        t = _loc_any(loc, c) or _custom_name(c, zh)
+        t = _loc_any(loc, c) or _custom_name(c, zh, loc)
         if t:
             eff.append(t)
     # maa_upgrade = { type = heavy_infantry  toughness = 10 } 这种块
@@ -1380,7 +1429,10 @@ def _generic_effects(body: str, loc: dict, prefixes=(), zh=True, exclude_blocks=
         ("maa_upgrade", ("兵士升级：", "Men-at-arms upgrade: ")),
     ):
         for v in re.findall(r"^\t" + fld + r"\s*=\s*([a-z_0-9]+)", body, re.M):
-            t = _loc_any(loc, v)
+            # 建筑解锁：优先「线名」（camel_farms_01 → 骆驼养殖场），
+            # 个体名（骆驼饲养员）单看容易误解成职业
+            t = (loc.get("building_type_" + v) or _loc_any(loc, v)) if fld == "unlock_building" \
+                else _loc_any(loc, v)
             if t:
                 eff.append((pair[0] if zh else pair[1]) + t)
     for blk in ("character_modifier", "personal_tenet_modifier", "culture_modifier",
@@ -1726,7 +1778,8 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
                                 "has_government", "has_dynasty_perk", "has_cultural_parameter"):
                         for v in re.findall(r"^\t" + fld + r"\s*=\s*([a-z_0-9]+)", body, re.M):
                             needed.update((v, v + "_name", "culture_parameter_" + v,
-                                           "building_" + v, "game_concept_" + v))
+                                           "building_" + v, "building_type_" + v,
+                                           "game_concept_" + v))
                     cr = _sub(body, "can_recruit")
                     if cr:
                         for fld in ("PARAMETER", "has_innovation", "has_government",
