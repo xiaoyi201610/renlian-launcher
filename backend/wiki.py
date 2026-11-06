@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 26                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 27                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 勋号兵种（any_accolade）里 accolade_attribute_level 的 type 取值全集：
 # 部分是 _attribute 后缀的勋号属性键（在 accolades 本地化里有中文名），
@@ -43,10 +43,30 @@ ACCOLADE_ATTR_KEYS = (
     "skirmisher_attribute", "skirmishers", "vanguard_attribute",
 )
 
-# unlock_maa_<x> token → 授予它的传统/革新名列表 [(kind, name)]，构建时填充。
-# 文化兵种的 can_recruit 用 valid_for_maa_trigger = { PARAMETER = unlock_maa_<x> }，
-# 该参数由某个传统/革新授予 —— 这才是真正的解锁条件（而非本地化那句废话『可以招募X兵士』）。
+# 文化兵种解锁映射（构建时填充）：
+#   UNLOCK_MAA : token(如 unlock_maa_archers_of_the_nile / unlock_infantry_samurai_units)
+#                → [(kind, name)]   供 can_recruit 分支反查授予它的传统/革新
+#   MAA_UNLOCK : maa_key(如 archers_of_the_nile / caballero)
+#                → {"grantors":[(kind,name)], "region":地区令牌|None}
+#                供「无 can_recruit、纯靠革新解锁」的文化兵种补文化/地区限制
 UNLOCK_MAA = {}
+MAA_UNLOCK = {}
+
+# 地理区域令牌 → 中文/英文名（地理区域定义里无 name 字段，引擎才生成显示名，
+# 这里只收录确实出现在兵种革新 region 限定上的几个，其余走兜底美化）。
+REGION_NAMES = {
+    "world_europe_west_iberia": ("伊比利亚地区", "Iberia"),
+    "ghw_region_germany": ("德意志地区", "Germany"),
+    "ghw_region_britannia": ("不列颠地区", "Britannia"),
+    "world_india": ("印度地区", "India"),
+    "custom_sahel_proper": ("萨赫勒地区", "The Sahel"),
+    "world_innovation_camels": ("沙漠/骆驼地区", "Camel regions"),
+    "world_asia_north_east": ("东北亚地区", "Northeast Asia"),
+    "custom_eastern_roman_empire": ("东罗马帝国地区", "Eastern Roman Empire"),
+    "world_himalaya": ("喜马拉雅地区", "Himalaya"),
+    "world_steppe": ("草原地区", "Steppe"),
+    "world_transoxiana": ("河中地区", "Transoxiana"),
+}
 
 # 目录名（相对 gameRoot）
 D_MAA = os.path.join("common", "men_at_arms_types")
@@ -609,15 +629,54 @@ def _accolade_attr_name(t: str, loc: dict, loc_lang: str) -> str:
     return t
 
 
-def _load_unlock_maa(game_root: str, loc: dict) -> dict:
-    """扫描 traditions + innovations，建立 unlock_maa_<x> token → 授予它的传统/革新名。
+def _region_name(tok: str, zh: bool) -> str:
+    """地理区域令牌 → 可读名。REGION_NAMES 收录了兵种革新上实际出现的几个；
+    其余令牌走兜底：去掉 world_/ghw_region_/custom_/_proper 前缀并美化。"""
+    if tok in REGION_NAMES:
+        return REGION_NAMES[tok][0 if zh else 1]
+    s = tok
+    for p in ("world_", "ghw_region_", "custom_", "_proper"):
+        s = s.replace(p, "")
+    return s.replace("_", " ").strip().title()
 
-    文化兵种的 can_recruit 用 `valid_for_maa_trigger = { PARAMETER = unlock_maa_<x> }`，
-    该参数由某个传统（或革新）授予 —— 这才是真正的解锁条件。
+
+def _resolve_name(name: str, loc: dict) -> str:
+    """解析本地化里没展开干净的 `$引用键$`（如 innovation_tiefutu → $tiefutu$ → 铁浮屠）。"""
+    if not name:
+        return name
+    for _ in range(3):
+        m = re.search(r"\$([A-Za-z_][A-Za-z0-9_]*)\$", name)
+        if not m:
+            break
+        inner = loc.get(m.group(1)) or loc.get(m.group(1) + "_name")
+        if not inner:
+            break
+        name = name[:m.start()] + inner + name[m.end():]
+    return name
+
+
+def _load_unlock_maa(game_root: str, loc: dict):
+    """扫描 traditions + innovations，建立两套解锁映射（见上方全局变量说明）。
+
+    文化兵种的解锁有两类写法：
+      - 参数写法：传统里 `unlock_maa_<x> = yes`，兵种 can_recruit 用
+        `valid_for_maa_trigger = { PARAMETER = unlock_maa_<x> }`
+      - 等号写法：革新里 `unlock_maa = <x>`（如 innovation_caballeros 解锁 caballero），
+        兵种本身常无 can_recruit 块，纯靠该革新（并可能带 region 地区限定）解锁
     本地化里 `culture_parameter_unlock_maa_<x>` 的原文是『可以招募[GetMaA('x').GetName]兵士』，
-    纯属废话（等于说"可以招募这个兵种"），不能当条件显示。
+    纯属废话，不能当条件显示。
     """
-    out = {}
+    token_map, key_map = {}, {}
+    def add_token(tok, kind, name):
+        token_map.setdefault(tok, [])
+        if (kind, name) not in token_map[tok]:
+            token_map[tok].append((kind, name))
+    def add_key(mk, kind, name, region):
+        e = key_map.setdefault(mk, {"grantors": [], "region": None})
+        if (kind, name) not in e["grantors"]:
+            e["grantors"].append((kind, name))
+        if region and not e["region"]:
+            e["region"] = region
     def scan(folder, kind):
         for f in sorted(glob.glob(os.path.join(game_root, folder, "*.txt"))):
             try:
@@ -627,13 +686,58 @@ def _load_unlock_maa(game_root: str, loc: dict) -> dict:
             for key, body in _top_blocks(text):
                 if "unlock_" not in body:
                     continue
+                # 授予者（传统/革新）名：可能带/不带 innovation_ 前缀，且可能含 $引用$ 未展开
+                name = _resolve_name(
+                    (loc.get(key) or loc.get(key + "_name")
+                     or loc.get(key.replace("innovation_", ""))
+                     or loc.get(key.replace("innovation_", "") + "_name")
+                     or _title(key)), loc)
+                region = re.search(r"region\s*=\s*([a-z_0-9]+)", body)
+                region = region.group(1) if region else None
+                # 参数写法 unlock_maa_<x> = yes
+                for tok in re.findall(r"unlock_maa_([A-Za-z0-9_]+)", body):
+                    if re.search(r"\bunlock_maa_%s\s*=\s*yes\b" % re.escape(tok), body):
+                        add_token("unlock_maa_" + tok, kind, name)
+                        add_key(tok, kind, name, region)
+                # 等号写法 unlock_maa = <x>
+                for mk in re.findall(r"unlock_maa\s*=\s*([a-z_0-9]+)", body):
+                    add_token("unlock_maa_" + mk, kind, name)
+                    add_key(mk, kind, name, region)
+                # 其余 unlock_<x> = yes（如 heritage 的 unlock_infantry_samurai_units）
                 for tok in set(re.findall(r"unlock_[A-Za-z0-9_]+", body)):
                     if re.search(r"\b%s\s*=\s*yes\b" % re.escape(tok), body):
-                        name = loc.get(key) or loc.get(key + "_name") or _title(key)
-                        out.setdefault(tok, []).append((kind, name))
+                        add_token(tok, kind, name)
     scan(D_TRAD, "tradition")
     scan(D_INNOV, "innovation")
+    return token_map, key_map
+
+
+def _maa_unlock_extra(key: str, zh: bool, maa_name: str = "") -> list:
+    """文化兵种即使没有 can_recruit 块，也可能由某革新/传统解锁（并带地区限定）。
+    返回补充的招募条件：『需要革新/传统：X』+ 『限定地区：Y』。
+    若授予者名与兵种自身名相同（如 caballero 的革新就叫『伊比利亚骑手』）则跳过，避免重复。"""
+    e = MAA_UNLOCK.get(key)
+    if not e:
+        return []
+    out = []
+    for kind, name in e["grantors"]:
+        if name == maa_name:
+            continue
+        pre = ("需要传统：" if kind == "tradition" else "需要革新：") if zh \
+               else ("Requires tradition: " if kind == "tradition" else "Requires innovation: ")
+        out.append(pre + name)
+    if e["region"]:
+        out.append(("限定地区：" if zh else "Restricted region: ") + _region_name(e["region"], zh))
     return out
+
+
+def _merge_recruit(a: list, b: list) -> list:
+    """合并两套招募条件并去重（保留首次出现顺序）。"""
+    out = []
+    for t in (a or []) + (b or []):
+        if t and t not in out:
+            out.append(t)
+    return out[:6]
 
 
 def _recruit_reqs(body: str, loc: dict, zh: bool = True) -> list:
@@ -855,7 +959,10 @@ def _collect_maa(game_root: str, loc: dict, loc_lang: str, costs: dict) -> list:
                 "cost": cost_of("buy_cost"),
                 "maintLow": cost_of("low_maintenance_cost"),
                 "maintHigh": cost_of("high_maintenance_cost"),
-                "recruit": _recruit_reqs(body, loc, loc_lang == "simp_chinese"),
+                "recruit": _merge_recruit(
+                    _recruit_reqs(body, loc, loc_lang == "simp_chinese"),
+                    _maa_unlock_extra(key, loc_lang == "simp_chinese", loc.get(key) or key),
+                ),
                 "terrain": terrain,
                 "counters": counters,
                 "winter": winter,
@@ -1481,11 +1588,11 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
         loc = _finalize(raw, sv, zh)
 
         # 2) 正式抽取（脚本值表要先算，效果里会引用）
-        global _SV_NUM, UNLOCK_MAA
+        global _SV_NUM, UNLOCK_MAA, MAA_UNLOCK
         costs = _load_cost_values(game_root)
         _SV_NUM = costs
-        # 文化兵种招募解锁：unlock_maa_<x> 参数由各传统/革新授予，反向建表
-        UNLOCK_MAA = _load_unlock_maa(game_root, loc)
+        # 文化兵种招募解锁：unlock_maa_<x> 参数各传统/革新授予，反向建表
+        UNLOCK_MAA, MAA_UNLOCK = _load_unlock_maa(game_root, loc)
         traditions, trad_map = _collect_traditions(game_root, loc, zh)
         maa = _collect_maa(game_root, loc, loc_lang, costs)
         cultures = _collect_cultures(game_root, loc, trad_map)

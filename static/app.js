@@ -691,7 +691,6 @@ function wikiRow(it) {
     line = `<span class="wk-name">${esc(it.name)}<small>${esc(it.nameEn || '')}</small></span>
       <span class="wk-tag">${esc(it.typeName || it.type)}</span>
       <span class="wk-mini">${esc(T('wiki.damage'))} ${wnum(it.damage)} · ${esc(T('wiki.toughness'))} ${wnum(it.toughness)} · ${esc(T('wiki.stack'))} ${wnum(it.stack)} · ${esc(T('wiki.cost'))} ${wnum(it.cost)}</span>
-      ${(it.recruit || []).length ? `<span class="wk-need">${esc(T('wiki.recruitReq'))}</span>` : ''}
       ${ct ? `<span class="wk-ctr-mini">${esc(T('wiki.counterShort'))} ${esc(ct)}</span>` : ''}`;
     if (open) {
       detail = `${it.flavor ? `<div class="wk-flavor">${esc(it.flavor)}</div>` : ''}
