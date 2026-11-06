@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 27                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 28                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 勋号兵种（any_accolade）里 accolade_attribute_level 的 type 取值全集：
 # 部分是 _attribute 后缀的勋号属性键（在 accolades 本地化里有中文名），
@@ -794,13 +794,9 @@ def _recruit_reqs(body: str, loc: dict, zh: bool = True) -> list:
         t = loc.get(i + "_name") or loc.get(i)
         if t:
             add(("需要革新：" if zh else "Requires innovation: ") + t)
-    # NOT 块里的禁止条件
-    for nb in _sub_all(cr, "NOT"):
-        for p in re.findall(r"has_cultural_parameter\s*=\s*([a-z_0-9]+)", nb):
-            t = loc.get("culture_parameter_" + p) or loc.get(p + "_name")
-            if t and "可以招募" not in (t or ""):
-                add(("不可拥有：" if zh else "Must not have: ") + t)
-    # 正向文化参数（排除整个 NOT 块，含嵌套，避免与「不可拥有」重复）
+    # NOT 块是文化层面的「禁止拥有某类兵种」限制（如「该文化统治者无法招募重步/重骑/战象」），
+    # 属于文化整体规则而非单个兵种的解锁条件，对玩家了解如何招募该兵种没有意义，故不再展示。
+    # 但仍需把 NOT 块整体剔除，避免其中的 has_cultural_parameter 被误当作正向招募要求。
     cr_pos = cr
     for nb in (_sub_all(cr, "NOT") or []):
         cr_pos = cr_pos.replace(nb, "")
