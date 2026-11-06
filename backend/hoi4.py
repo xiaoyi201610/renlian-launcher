@@ -1483,11 +1483,15 @@ def load(game_root: str = "", ui_lang: str = "zh", force: bool = False) -> dict:
         try:
             # focusTrees 是从 trees 派生的瘦身视图，不入缓存，免得同一份数据存两遍
             slim_data = {k: v for k, v in data.items() if k != "focusTrees"}
-            with open(cpath, "w", encoding="utf-8") as f:
+            # 先写临时文件再换名：8 MB 缓存写到一半被强关会留下坏文件
+            tmp = cpath + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump({"ver": H4_VER, "sig": sig, "root": root, "data": slim_data},
                           f, ensure_ascii=False)
-        except Exception:
-            pass
+            os.replace(tmp, cpath)
+        except Exception as ex:         # 写不进去只影响下次重建，但要留痕，别静默吞
+            import sys
+            print("[hoi4-cache] 写入失败：%s" % ex, file=sys.stderr)
         d = dict(data)
         d["tabs"] = [dict(t) for t in data.get("tabs") or []]
         d.pop("trees", None)

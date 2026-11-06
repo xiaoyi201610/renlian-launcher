@@ -17,6 +17,7 @@ import re
 import json
 import glob
 import time
+import threading
 
 V3_VER = 3                      # 解析逻辑变更时 +1，强制重建缓存
 
@@ -686,6 +687,7 @@ def _build(root, ui_lang):
 
 
 # ----------------------------------------------------------------- 对外接口
+_LOCK = threading.Lock()
 _MEM = {"key": "", "data": None}
 
 
@@ -699,6 +701,12 @@ def _sig(root, loc_lang):
 
 
 def load(game_root="", ui_lang="zh", force=False):
+    """百科首屏一次请求，多线程下要串起来，避免重复重建 / 同时写缓存。"""
+    with _LOCK:
+        return _load(game_root, ui_lang, force)
+
+
+def _load(game_root="", ui_lang="zh", force=False):
     root = game_root_of(game_root)
     if not root:
         return {"ok": False, "supported": True, "game": "vic3", "gameName": "Victoria 3",
@@ -734,12 +742,16 @@ def load(game_root="", ui_lang="zh", force=False):
     data["buildSeconds"] = round(time.time() - t0, 2)
     data["cached"] = False
     try:
-        with open(cp, "w", encoding="utf-8") as f:
+        # 先写临时文件再换名：进程被强关时不会留下半截的 0 字节缓存
+        tmp = cp + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             payload = dict(data)
             payload["_sig"] = sig
             json.dump(payload, f, ensure_ascii=False)
-    except Exception:
-        pass
+        os.replace(tmp, cp)
+    except Exception as ex:             # 写不进去只影响下次重建，但要留痕，别静默吞
+        import sys
+        print("[vic3-cache] 写入失败：%s" % ex, file=sys.stderr)
     _MEM["key"], _MEM["data"] = sig, data
     return data
 

@@ -20,6 +20,7 @@
 
 import os
 import re
+import json
 import glob
 import time
 import threading
@@ -1298,9 +1299,8 @@ def game_root_of(hint: str = "") -> str:
 
 def _game_version(root: str) -> str:
     try:
-        import json as _json
         with open(os.path.join(root, "launcher-settings.json"), encoding="utf-8-sig") as f:
-            return (_json.load(f) or {}).get("rawVersion") or ""
+            return (json.load(f) or {}).get("rawVersion") or ""
     except Exception:
         return ""
 
@@ -1424,11 +1424,15 @@ def load(game_root: str = "", ui_lang: str = "zh", force: bool = False) -> dict:
         data = build(root, loc_lang, zh)
         _MEM[sig] = data
         try:
-            with open(cpath, "w", encoding="utf-8") as f:
+            # 先写临时文件再换名：进程被强关时不会留下半截的 0 字节缓存
+            tmp = cpath + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump({"ver": SL_VER, "sig": sig, "root": root, "data": data},
                           f, ensure_ascii=False)
-        except Exception:
-            pass
+            os.replace(tmp, cpath)
+        except Exception as ex:         # 写不进去只影响下次重建，但要留痕，别静默吞
+            import sys
+            print("[stellaris-cache] 写入失败：%s" % ex, file=sys.stderr)
         return data
 
 

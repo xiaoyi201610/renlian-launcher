@@ -6,6 +6,10 @@
   1. 导航项是否带 href（说明打包进去的是修复后的 static）
   2. 模拟点击每个导航，路由是否真的跳转
 
+注意：现在的 pywebview 不再认 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS，
+调试端口起不来。要走 exe 内部接口的话，用 verify_vic3_exe.py 的做法
+——从 netstat 按 PID 找到内置服务的端口，直接发 HTTP 请求。
+
 用法：python verify_exe.py
 """
 

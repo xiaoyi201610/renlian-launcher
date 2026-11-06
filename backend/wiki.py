@@ -1952,11 +1952,14 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
         _MEM[mem_key] = (sig, data)
 
         try:                            # 落盘缓存（丢包也无所谓，只是下次重建）
-            with open(cpath, "w", encoding="utf-8") as f:
+            tmp = cpath + ".tmp"        # 临时文件 + 换名，避免留下半截缓存
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump({"wiki_ver": WIKI_VER, "sig": sig, "root": game_root, "data": data},
                           f, ensure_ascii=False)
-        except Exception:
-            pass
+            os.replace(tmp, cpath)
+        except Exception as ex:         # 写不进去只影响下次重建，但要留痕，别静默吞
+            import sys
+            print("[wiki-cache] 写入失败：%s" % ex, file=sys.stderr)
 
         out = dict(data)
         out["cached"] = False
