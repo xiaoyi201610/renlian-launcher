@@ -29,7 +29,20 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 35                            # 解析逻辑变更时 +1，强制重建旧缓存
+import stellaris                        # 群星百科（独立模块，按 game 分派）
+
+WIKI_VER = 36                            # 解析逻辑变更时 +1，强制重建旧缓存
+
+# 百科 tab：(id, 图标, 渲染布局)。label 由前端 i18n 提供（支持 5 种界面语言）
+CK3_TABS = [
+    ("maa", "⚔", "maa"),
+    ("cultures", "🏛", "cultures"),
+    ("traditions", "✦", "traditions"),
+    ("religions", "☪", "generic"),
+    ("tenets", "✧", "generic"),
+    ("doctrines", "⚖", "generic"),
+    ("innovations", "⚙", "generic"),
+]
 
 # 勋号兵种（any_accolade）里 accolade_attribute_level 的 type 取值全集：
 # 部分是 _attribute 后缀的勋号属性键（在 accolades 本地化里有中文名），
@@ -91,8 +104,8 @@ CATEGORIES = [
     {"id": "innovations", "dir": D_INNOV, "collect": "_collect_innovations"},
 ]
 
-# 目前只有 CK3 有对应脚本结构；其他游戏返回 supported=false
-SUPPORTED_GAMES = {"ck3"}
+# 目前只有 CK3 与群星有对应脚本结构；其他游戏返回 supported=false
+SUPPORTED_GAMES = {"ck3", "stellaris"}
 
 # 界面语言 → 游戏本地化目录
 LANG_MAP = {
@@ -1642,6 +1655,9 @@ def _scripts_root(game_root: str) -> str:
 def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) -> dict:
     """读取（并缓存）百科数据。"""
     game = (game or "ck3").lower()
+    if game == "stellaris":
+        # 群星是另一套脚本结构（civics / traditions / technology…），交给独立模块
+        return stellaris.load(game_root, ui_lang, force)
     if game not in SUPPORTED_GAMES:
         return {"ok": True, "supported": False, "game": game, "maa": [], "cultures": [],
                 "traditions": [], "religions": [], "tenets": [], "doctrines": [],
@@ -1887,6 +1903,10 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
             "counterChain": chain,
             "tradCats": sorted({t["cat"] for t in traditions}),
         }
+        # tab 元数据：前端按 layout 选渲染分支（与群星百科共用一套前端）
+        data["tabs"] = [{"id": tid, "icon": icon, "layout": layout,
+                         "count": data["counts"].get(tid, 0)}
+                        for tid, icon, layout in CK3_TABS]
         _MEM[mem_key] = (sig, data)
 
         try:                            # 落盘缓存（丢包也无所谓，只是下次重建）

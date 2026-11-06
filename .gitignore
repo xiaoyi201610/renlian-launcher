@@ -33,3 +33,9 @@ mod-source-overrides.json
 /exe-final.png
 /exe-shot.png
 /webview-shot.png
+/_t*.png
+/ck3-regress.png
+/sl-*.png
+/innov-*.png
+/tenet-shot.png
+.workbuddy/

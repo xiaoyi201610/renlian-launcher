@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.8';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -474,9 +474,33 @@ function bindNav() {
 
 /* ---------------- 百科（军队 / 文化 / 传统） ---------------- */
 const WIKI_SITE = 'https://ck3.paradoxwikis.com/';
-const WIKI_ST = { data: null, owners: null, tab: 'maa', q: '', cat: '', open: '', force: false, sort: 'type' };
-const WIKI_GENERIC = ['religions', 'tenets', 'doctrines', 'innovations'];
+const WIKI_ST = { data: null, owners: null, tab: '', q: '', cat: '', open: '', force: false, sort: 'type' };
 const WK_LABEL = { damage: 'wiki.damage', toughness: 'wiki.toughness', pursuit: 'wiki.pursuit', screen: 'wiki.screen' };
+
+/* 各游戏的 wiki 站点（用于「打开 wiki」按钮） */
+function wikiSite() {
+  return (WIKI_ST.data && WIKI_ST.data.game === 'stellaris')
+    ? 'https://stellaris.paradoxwikis.com/' : WIKI_SITE;
+}
+
+/* 当前 tab 的元数据：后端下发，带 layout 决定用哪套渲染分支 */
+function wkTab(id) {
+  const tabs = (WIKI_ST.data && WIKI_ST.data.tabs) || [];
+  const tid = id || WIKI_ST.tab;
+  return tabs.find(t => t.id === tid) || { id: tid, layout: 'generic', label: tid, icon: '', count: 0 };
+}
+function wkLayout() { return wkTab().layout || 'generic'; }
+
+/* tab 标题：群星由后端给中文/英文名；CK3 走界面语言表 */
+const WK_TAB_KEY = {
+  maa: 'wiki.tabMaa', cultures: 'wiki.tabCultures', traditions: 'wiki.tabTraditions',
+  religions: 'wiki.tabReligions', tenets: 'wiki.tabTenets', doctrines: 'wiki.tabDoctrines',
+  innovations: 'wiki.tabInnovations',
+};
+function wkTabLabel(t) {
+  if (t.label) return t.label;
+  return WK_TAB_KEY[t.id] ? T(WK_TAB_KEY[t.id]) : t.id;
+}
 
 /* 脚本键 → 可读英文标题（拿去 wiki 搜索用） */
 function wikiTitle(key) {
@@ -484,7 +508,7 @@ function wikiTitle(key) {
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 function wikiGoto(kind, key) {
-  const url = WIKI_SITE + 'index.php?search=' + encodeURIComponent(wikiTitle(key));
+  const url = wikiSite() + 'index.php?search=' + encodeURIComponent(wikiTitle(key));
   post('/api/url', { url });
 }
 function wnum(v) { return (v === null || v === undefined || v === '') ? '—' : v; }
@@ -547,6 +571,12 @@ async function renderWiki() {
   WIKI_ST.data = d;
   WIKI_ST.owners = null;
   WIKI_ST.open = '';
+  // 换游戏后旧 tab 可能不存在，回落到第一个可用分类
+  const tabs = d.tabs || [];
+  if (!tabs.some(t => t.id === WIKI_ST.tab)) {
+    WIKI_ST.tab = tabs.length ? tabs[0].id : 'maa';
+    WIKI_ST.cat = '';
+  }
   paintWiki();
 }
 
@@ -563,7 +593,10 @@ function wikiOwners() {
 function wikiItems() {
   const d = WIKI_ST.data, q = WIKI_ST.q.trim().toLowerCase(), cat = WIKI_ST.cat;
   const hit = s => !q || String(s || '').toLowerCase().includes(q);
-  if (WIKI_ST.tab === 'maa') {
+  const layout = wkLayout();
+  const tid = WIKI_ST.tab;
+
+  if (layout === 'maa') {
     const arr = (d.maa || []).filter(m =>
       (!cat || m.type === cat) &&
       (hit(m.name) || hit(m.nameEn) || hit(m.key) || hit(m.typeName)));
@@ -573,22 +606,25 @@ function wikiItems() {
     return arr.slice().sort((a, b) => (Number(b[key]) || 0) - (Number(a[key]) || 0) ||
       String(a.name).localeCompare(String(b.name), 'zh'));
   }
-  if (WIKI_ST.tab === 'cultures') {
+  if (layout === 'cultures') {
     return (d.cultures || []).filter(c =>
       (!cat || (c.heritage && c.heritage.key) === cat) &&
       (hit(c.name) || hit(c.key) || hit(c.ethos && c.ethos.name) || hit(c.heritage && c.heritage.name)));
   }
-  if (WIKI_GENERIC.indexOf(WIKI_ST.tab) >= 0) {
-    const arr = (d[WIKI_ST.tab] || []).filter(x =>
+  if (layout === 'generic') {
+    const arr = (d[tid] || []).filter(x =>
       (!cat || x.catKey === cat) &&
       (hit(x.name) || hit(x.key) || hit(x.desc) || hit(x.cat) ||
-       (x.effects || []).some(hit) || (x.links || []).some(hit)));
-    const order = (d.catOrders || {})[WIKI_ST.tab] || [];
+       (x.effects || []).some(hit) || (x.links || []).some(hit) ||
+       (x.attrs || []).some(a => hit(a.label) || hit(a.value))));
+    const order = (d.catOrders || {})[tid] || [];
     if (order.length) {
+      // 先按分类顺序分组，组内保持后端的脚本原始顺序
+      // （传统要「开端 → 完成 → 其余」，不能被打成字母序）
+      const idx = new Map(arr.map((x, i) => [x, i]));
       return arr.slice().sort((a, b) => {
         const ia = order.indexOf(a.catKey), ib = order.indexOf(b.catKey);
-        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) ||
-          String(a.name).localeCompare(String(b.name), 'zh');
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || idx.get(a) - idx.get(b);
       });
     }
     return arr;
@@ -600,10 +636,11 @@ function wikiItems() {
 
 function wikiFilters() {
   const d = WIKI_ST.data;
-  if (WIKI_ST.tab === 'maa') {
+  const layout = wkLayout(), tid = WIKI_ST.tab;
+  if (layout === 'maa') {
     return (d.typesInfo || []).map(t => ({ v: t.key, label: t.name, n: t.count }));
   }
-  if (WIKI_ST.tab === 'cultures') {
+  if (layout === 'cultures') {
     const seen = {};
     (d.cultures || []).forEach(c => {
       const h = c.heritage || {};
@@ -612,15 +649,15 @@ function wikiFilters() {
     });
     return Object.values(seen).sort((a, b) => b.n - a.n);
   }
-  if (WIKI_GENERIC.indexOf(WIKI_ST.tab) >= 0) {
+  if (layout === 'generic') {
     const seen = {};
-    (d[WIKI_ST.tab] || []).forEach(x => {
+    (d[tid] || []).forEach(x => {
       const k = x.catKey || '_';
       if (!seen[k]) seen[k] = { v: k, label: x.cat || T('wiki.all'), n: 0 };
       seen[k].n += 1;
     });
     const arr = Object.values(seen);
-    const order = (d.catOrders || {})[WIKI_ST.tab] || [];
+    const order = (d.catOrders || {})[tid] || [];
     if (order.length) {
       return arr.sort((a, b) => {
         const ia = order.indexOf(a.v), ib = order.indexOf(b.v);
@@ -684,9 +721,10 @@ function wikiCycleCard() {
 
 function wikiRow(it) {
   const open = WIKI_ST.open === it.key;
+  const layout = wkLayout();
   let line = '', detail = '';
 
-  if (WIKI_ST.tab === 'maa') {
+  if (layout === 'maa') {
     const ct = (it.counters || []).slice(0, 3).map(c => c.name).join('、');
     line = `<span class="wk-name">${esc(it.name)}<small>${esc(it.nameEn || '')}</small></span>
       <span class="wk-tag">${esc(it.typeName || it.type)}</span>
@@ -725,7 +763,7 @@ function wikiRow(it) {
           <button class="btn sm ghost" data-wiki="${esc(it.key)}">${esc(T('wiki.openWiki'))}</button>
         </div>`;
     }
-  } else if (WIKI_ST.tab === 'cultures') {
+  } else if (layout === 'cultures') {
     line = `<span class="wk-name">${esc(it.name)}</span>
       <span class="wk-tag">${esc((it.heritage || {}).name || '—')}</span>
       <span class="wk-mini">${esc((it.ethos || {}).name || '')} · ${esc(T('wiki.tradCount', { n: (it.traditions || []).length }))}</span>`;
@@ -754,14 +792,16 @@ function wikiRow(it) {
           <button class="btn sm ghost" data-wiki="${esc(it.key)}">${esc(T('wiki.openWiki'))}</button>
         </div>`;
     }
-  } else if (WIKI_GENERIC.indexOf(WIKI_ST.tab) >= 0) {
-    /* 宗教 / 信条 / 教义 / 革新：统一条目结构 */
+  } else if (layout === 'generic') {
+    /* 宗教 / 信条 / 教义 / 革新（CK3）与群星全部十类：统一条目结构 */
     const ef = it.effects || [], links = it.links || [], attrs = it.attrs || [];
     /* 信条分两个槽位：核心信条（全信徒）与个人教义（只对本人），效果要分开展示 */
     const isTenet = WIKI_ST.tab === 'tenets';
     const effTitle = isTenet ? T('wiki.coreEffects') : T('wiki.effects');
     const pf = it.personal || [];
-    line = `<span class="wk-name">${esc(it.name)}<small>${esc(wikiTitle(it.key))}</small></span>
+    /* 群星的名字本身就是中文，再挂一行英文字号反而挤；CK3 保留英文副标题便于对照 wiki */
+    const isSl = (WIKI_ST.data && WIKI_ST.data.game === 'stellaris');
+    line = `<span class="wk-name">${esc(it.name)}${isSl ? '' : `<small>${esc(wikiTitle(it.key))}</small>`}</span>
       <span class="wk-tag">${esc(it.cat || T('wiki.all'))}</span>
       <span class="wk-mini wk-ellipsis">${esc(it.desc || (ef[0] || ''))}</span>`;
     if (open) {
@@ -816,15 +856,12 @@ function wikiRow(it) {
 
 function paintWiki() {
   const d = WIKI_ST.data;
-  const tabs = [
-    { id: 'maa', icon: '⚔', label: T('wiki.tabMaa'), n: d.counts.maa },
-    { id: 'cultures', icon: '🏛', label: T('wiki.tabCultures'), n: d.counts.cultures },
-    { id: 'traditions', icon: '✦', label: T('wiki.tabTraditions'), n: d.counts.traditions },
-    { id: 'religions', icon: '☪', label: T('wiki.tabReligions'), n: d.counts.religions },
-    { id: 'tenets', icon: '✧', label: T('wiki.tabTenets'), n: d.counts.tenets },
-    { id: 'doctrines', icon: '⚖', label: T('wiki.tabDoctrines'), n: d.counts.doctrines },
-    { id: 'innovations', icon: '⚙', label: T('wiki.tabInnovations'), n: d.counts.innovations },
-  ];
+  const isCk3 = d.game !== 'stellaris';
+  // tab 由后端下发（CK3 七类 / 群星十类），前端只负责按 layout 选渲染分支
+  const tabs = (d.tabs || []).map(t => ({
+    id: t.id, icon: t.icon || '', label: wkTabLabel(t), n: t.count,
+  }));
+  const layout = wkLayout();
   const items = wikiItems();
   const cats = [{ v: '', label: T('wiki.all'), n: null }].concat(wikiFilters());
   const sortOpts = [
@@ -834,16 +871,16 @@ function paintWiki() {
     { v: 'pursuit', label: T('wiki.sortPursuit') },
     { v: 'screen', label: T('wiki.sortScreen') },
   ];
-  // 分类太多了（教义有 49 组）就换成下拉，别把胶囊铺满屏
+  // 分类太多了（教义有 49 组、群星科技 3 类无妨）就换成下拉，别把胶囊铺满屏
   const useSelect = cats.length > 14;
 
   $('#view').innerHTML = `
     <div class="page-head"><div>
       <div class="page-title">${esc(T('wiki.title'))}</div>
-      <div class="page-sub">${esc(T('wiki.sub'))}</div>
+      <div class="page-sub">${esc(T('wiki.sub'))}${d.gameVer ? ` · ${esc(d.gameName || '')} ${esc(d.gameVer)}` : ''}</div>
     </div><div class="bar">
-      <button class="btn sm ghost" id="wkArmy">${esc(T('wiki.armyPage'))}</button>
-      <button class="btn sm ghost" id="wkCulture">${esc(T('wiki.culturePage'))}</button>
+      ${isCk3 ? `<button class="btn sm ghost" id="wkArmy">${esc(T('wiki.armyPage'))}</button>
+      <button class="btn sm ghost" id="wkCulture">${esc(T('wiki.culturePage'))}</button>` : ''}
       <button class="btn sm ghost" id="wkRefresh" title="${esc(T('wiki.refreshHint'))}">⟳ ${esc(T('wiki.refresh'))}</button>
     </div></div>
 
@@ -852,11 +889,11 @@ function paintWiki() {
         <i>${t.icon}</i><span>${esc(t.label)}</span><b>${t.n}</b></button>`).join('')}
     </div>
 
-    ${WIKI_ST.tab === 'maa' ? wikiCycleCard() : ''}
+    ${layout === 'maa' ? wikiCycleCard() : ''}
 
     <div class="wk-toolbar">
       <input class="inp wk-search" id="wkQ" value="${esc(WIKI_ST.q)}" placeholder="${esc(T('wiki.search'))}">
-      ${WIKI_ST.tab === 'maa'
+      ${layout === 'maa'
         ? `<select class="inp wk-sel wk-sortsel" id="wkSort">${sortOpts.map(o =>
             `<option value="${o.v}" ${WIKI_ST.sort === o.v ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`
         : ''}
@@ -909,8 +946,9 @@ function paintWiki() {
     toast(T('wiki.rebuilding'), 'ok');
     await renderWiki();
   };
-  $('#wkArmy').onclick = () => post('/api/url', { url: WIKI_SITE + 'Army' });
-  $('#wkCulture').onclick = () => post('/api/url', { url: WIKI_SITE + 'Culture' });
+  const bArmy = $('#wkArmy'), bCulture = $('#wkCulture');
+  if (bArmy) bArmy.onclick = () => post('/api/url', { url: WIKI_SITE + 'Army' });
+  if (bCulture) bCulture.onclick = () => post('/api/url', { url: WIKI_SITE + 'Culture' });
 }
 
 const ROUTES = {

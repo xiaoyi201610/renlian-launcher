@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DIST_EXE = os.path.join(HERE, "dist", "人联启动器.exe")
 RELEASE = os.path.join(HERE, "release")
 PKG_NAME = "人联启动器"
-VERSION = "1.7"
+VERSION = "1.8"
 PKG = os.path.join(RELEASE, "_stage_" + PKG_NAME)
 ZIP_PATH = os.path.join(RELEASE, f"{PKG_NAME}_v{VERSION}.zip")
 

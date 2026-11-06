@@ -1093,11 +1093,12 @@ body{
 .wk-spin{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--gold-b);border-radius:50%;display:inline-block;animation:wk-spin .8s linear infinite}
 @keyframes wk-spin{to{transform:rotate(360deg)}}
 
-.wk-tabs{display:flex;gap:8px;margin-bottom:12px}
-.wk-tab{display:flex;align-items:center;gap:8px;padding:9px 14px;border:1px solid var(--line);border-radius:10px;
-  background:var(--panel);color:var(--fg-2);cursor:pointer;font-size:13px;transition:.15s}
+/* 群星有 10 个分类，收一点内边距让一行放得下，别把「物种特质」挤到第二行 */
+.wk-tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.wk-tab{display:flex;align-items:center;gap:6px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;
+  background:var(--panel);color:var(--fg-2);cursor:pointer;font-size:12.5px;transition:.15s;white-space:nowrap}
 .wk-tab i{font-style:normal;opacity:.9}
-.wk-tab b{font-size:11.5px;color:var(--dim-2);font-weight:600}
+.wk-tab b{font-size:11px;color:var(--dim-2);font-weight:600}
 .wk-tab:hover{border-color:#2c3d4e;color:var(--fg)}
 .wk-tab.active{border-color:var(--gold-b);color:var(--gold-b);background:var(--gold-dim)}
 .wk-tab.active b{color:var(--gold-b)}
