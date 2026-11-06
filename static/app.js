@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7.0.4';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.7.0.5';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -500,6 +500,7 @@ const WK_TAB_KEY = {
   maa: 'wiki.tabMaa', cultures: 'wiki.tabCultures', traditions: 'wiki.tabTraditions',
   religions: 'wiki.tabReligions', tenets: 'wiki.tabTenets', doctrines: 'wiki.tabDoctrines',
   innovations: 'wiki.tabInnovations', laws: 'wiki.tabLaws',
+  igs: 'wiki.tabIGs', igtraits: 'wiki.tabIGTraits',
 };
 function wkTabLabel(t) {
   if (WK_TAB_KEY[t.id]) return T(WK_TAB_KEY[t.id]);
@@ -510,9 +511,10 @@ function wkTabLabel(t) {
 /* 脚本键 → 可读英文标题（拿去 wiki 搜索用） */
 function wikiTitle(key) {
   let k = String(key || '');
-  /* 维多利亚 3 的 key 是 law_xxx，wiki 上的条目名不带前缀（法律条目分散在
-     Power structure / Economy / Human rights 三个子页里，用名字搜更准） */
-  if (WIKI_ST.data && WIKI_ST.data.game === 'vic3') k = k.replace(/^law_/, '');
+  /* 维多利亚 3 的 key 是 law_xxx / ig_xxx / ig_trait_xxx，wiki 上的条目名不带前缀 */
+  if (WIKI_ST.data && WIKI_ST.data.game === 'vic3') {
+    k = k.replace(/^law_/, '').replace(/^ig_trait_/, '').replace(/^ig_/, '');
+  }
   return k.split('_').filter(Boolean)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
@@ -622,7 +624,7 @@ function wikiItems() {
       (hit(c.name) || hit(c.key) || hit(c.ethos && c.ethos.name) || hit(c.heritage && c.heritage.name)));
   }
   if (layout === 'generic') {
-    const arr = (d[tid] || []).filter(x => {
+    const arr = (d[wkListKey(tid)] || []).filter(x => {
       if (!cat) { /* 未选子分类 */ }
       else if (x.catKey !== cat && (x.cats || []).indexOf(cat) < 0) return false;
       if (tid === 'tech' && WIKI_ST.area && x.areaKey !== WIKI_ST.area) return false;
@@ -652,6 +654,11 @@ function wikiItems() {
     (hit(t.name) || hit(t.key) || hit(t.desc) || (t.effects || []).some(hit)));
 }
 
+/* 列表字段名多数跟 tab id 同名，个别是驼峰（维3 的集团特质） */
+function wkListKey(tid) {
+  return tid === 'igtraits' ? 'igTraits' : tid;
+}
+
 function wikiFilters() {
   const d = WIKI_ST.data;
   const layout = wkLayout(), tid = WIKI_ST.tab;
@@ -678,15 +685,21 @@ function wikiFilters() {
   if (layout === 'generic') {
     /* 维多利亚 3 的法律有一条整组的顺序（权力结构 → 经济 → 人权，组内按进步性），
        直接照后端给的组清单来，别按条数排 */
-    if ((d.lawGroups || []).length) {
+    if (tid === 'laws' && (d.lawGroups || []).length) {
       return d.lawGroups.map(g => ({
         v: g.key,
         label: (g.areaLabel ? g.areaLabel + ' · ' : '') + g.label,
         n: g.n,
       }));
     }
+    /* 集团特质按所属集团分，顺序跟利益集团页一致（脚本里的 index） */
+    if (tid === 'igtraits' && (d.igList || []).length) {
+      return d.igList.filter(g => g.n).map(g => ({ v: g.key, label: g.label, n: g.n }));
+    }
+    /* 利益集团只有 8 条，不分档，不显示筛选条 */
+    if (tid === 'igs') return [];
     const seen = {};
-    (d[tid] || []).forEach(x => {
+    (d[wkListKey(tid)] || []).forEach(x => {
       const k = x.catKey || '_';
       if (!seen[k]) seen[k] = { v: k, label: x.cat || T('wiki.all'), n: 0 };
       seen[k].n += 1;
@@ -892,12 +905,15 @@ function wikiRow(it) {
     const pf = it.personal || [];
     /* 群星的名字本身就是中文，再挂一行英文字号反而挤；CK3 保留英文副标题便于对照 wiki */
     const isSl = (WIKI_ST.data && ['stellaris', 'hoi4', 'vic3'].includes(WIKI_ST.data.game));
-    /* 维多利亚 3 的法律图标：DDS 由后端转 PNG，按需懒加载 */
+    /* 维多利亚 3 的图标：DDS 由后端转 PNG，按需懒加载；利益集团/特质/法律分属不同子目录 */
     const ico = it.icon
-      ? `<span class="wk-ico"><img loading="lazy" src="/api/wiki/law-icon?n=${encodeURIComponent(it.icon)}" alt=""
+      ? `<span class="wk-ico"><img loading="lazy" src="/api/wiki/law-icon?n=${encodeURIComponent(it.icon)}${it.iconKind ? '&k=' + it.iconKind : ''}" alt=""
            onerror="this.parentNode.classList.add('wk-ico-na');this.remove()"></span>`
       : '';
-    line = `${ico}<span class="wk-name">${esc(it.name)}${isSl ? '' : `<small>${esc(wikiTitle(it.key))}</small>`}</span>
+    /* 利益集团有主题色（脚本里的 hsv），用一个色点看着比灰图标直观 */
+    const dot = it.color
+      ? `<i class="wk-ig-dot" style="background:${esc(it.color)}"></i>` : '';
+    line = `${ico}${dot}<span class="wk-name">${esc(it.name)}${isSl ? '' : `<small>${esc(wikiTitle(it.key))}</small>`}</span>
       <span class="wk-tag">${esc(it.cat || T('wiki.all'))}</span>
       <span class="wk-mini wk-ellipsis">${esc(it.desc || (ef[0] || ''))}</span>`;
     if (open) {
@@ -1319,7 +1335,9 @@ function paintWiki() {
   const layout = wkLayout();
   if (layout === 'focus') { paintFocus(tabs); return; }
   const items = wikiItems();
-  const cats = [{ v: '', label: T('wiki.all'), n: null }].concat(wikiFilters());
+  const wf = wikiFilters();
+  /* 只有一个「全部」时不用摆筛选条（维3 的利益集团就 8 条，不分档） */
+  const cats = wf.length ? [{ v: '', label: T('wiki.all'), n: null }].concat(wf) : [];
   const sortOpts = [
     { v: 'type', label: T('wiki.sortType') },
     { v: 'damage', label: T('wiki.sortDamage') },

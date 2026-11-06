@@ -1669,10 +1669,10 @@ def focus_icon(game_root: str, gfx_name: str) -> str:
         return ""
 
 
-def law_icon(game_root: str, name: str) -> str:
-    """维多利亚 3 法律图标 PNG 路径（DDS 按需转换 + 缓存）。"""
+def law_icon(game_root: str, name: str, kind: str = "") -> str:
+    """维多利亚 3 的图标 PNG 路径（法律 / 利益集团 / 集团特质，DDS 按需转换 + 缓存）。"""
     try:
-        return vic3.law_icon_png(game_root, name)
+        return vic3.icon_png(game_root, name, kind)
     except Exception:
         return ""
 

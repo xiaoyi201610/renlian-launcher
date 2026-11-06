@@ -1116,8 +1116,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(404, b"", "image/png")
                 return
             if p == "/api/wiki/law-icon":
-                # 维多利亚 3 法律图标：同样是 DDS → PNG，转一次后走浏览器缓存
-                img = wiki.law_icon(CTX.cfg.get("gameRoot") or "", q.get("n") or "")
+                # 维多利亚 3 的图标（法律 / 利益集团 / 集团特质）：DDS → PNG，转一次后走浏览器缓存
+                img = wiki.law_icon(CTX.cfg.get("gameRoot") or "",
+                                    q.get("n") or "", q.get("k") or "")
                 if img and os.path.isfile(img):
                     try:
                         with open(img, "rb") as f:

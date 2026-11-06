@@ -17,9 +17,10 @@ import re
 import json
 import glob
 import time
+import colorsys
 import threading
 
-V3_VER = 3                      # 解析逻辑变更时 +1，强制重建缓存
+V3_VER = 5                      # 解析逻辑变更时 +1，强制重建缓存
 
 LANG_MAP = {
     "zh": "simp_chinese",
@@ -38,10 +39,41 @@ LANG_MAP = {
 D_LAWS = os.path.join("common", "laws")
 D_GROUPS = os.path.join("common", "law_groups")
 D_IDEO = os.path.join("common", "ideologies")
+D_IG = os.path.join("common", "interest_groups")
+D_IGT = os.path.join("common", "interest_group_traits")
+D_DLC = "dlc"
 D_LOC = "localization"
 
 TABS = [
     {"id": "laws", "icon": "⚖", "label": "法律", "layout": "generic"},
+    {"id": "igs", "icon": "🏛", "label": "利益集团", "layout": "generic"},
+    {"id": "igtraits", "icon": "✧", "label": "集团特质", "layout": "generic"},
+]
+
+# 利益集团好感档位：特质的 `min_approval` / `max_approval` 用它
+APPROVAL_LABEL = {
+    "angry": "愤怒",
+    "unhappy": "不满",
+    "neutral": "中立",
+    "happy": "满意",
+    "loyal": "忠诚",
+}
+APPROVAL_ORDER = ["angry", "unhappy", "neutral", "happy", "loyal"]
+
+# 集团权重：脚本里都写成 `key = { value = 1.5 … }`，界面上只取基础值
+IG_WEIGHTS = [
+    ("pop_weight", "人口权重"),
+    ("monarch_weight", "君主权重"),
+    ("agitator_weight", "鼓动者权重"),
+    ("commander_weight", "指挥官权重"),
+    ("magnate_weight", "巨头权重"),
+    ("executive_weight", "高管权重"),
+    ("noble_chance", "贵族加入概率"),
+    ("female_commander_chance", "女性指挥官"),
+    ("female_executive_chance", "女性高管"),
+    ("female_monarch_chance", "女性君主"),
+    ("female_politician_chance", "女性政治家"),
+    ("female_agitator_chance", "女性鼓动者"),
 ]
 
 # 法律组的大类：脚本里只写英文枚举，官方本地化没有这几个键，手工定名
@@ -176,7 +208,8 @@ _GETX_RE = re.compile(r"\[(Get[A-Za-z]+)\(\s*'([^']+)'\s*\)\.([A-Za-z]+)\]")
 _BRACK_RE = re.compile(r"\[([^\[\]]+)\]")
 _VAR_RE = re.compile(r"\$([^$]+)\$")
 _ICON_RE = re.compile(r"@[a-zA-Z0-9_]+!")
-_FMT_RE = re.compile(r"#[a-zA-Z]+(?:\s+[^#]*?)?#!")
+# 只匹配开标记本身（#bold / #lore / #g …），不碰后面的正文
+_FMT_RE = re.compile(r"#[a-zA-Z]+")
 
 
 def _clean(s, loc, depth=0):
@@ -201,7 +234,10 @@ def _clean(s, loc, depth=0):
                           or m.group(1).split("|")[0].strip() in loc) else "", s)
     s = _VAR_RE.sub(lambda m: _sub_key(m.group(1).split("|")[0].strip()), s)
     s = _ICON_RE.sub("", s)
+    # 格式标记只去标记、留下文字：`#bold 文字#!` / `#lore …#!` / 颜色码 `#g` / 嵌套的 `#!#!`。
+    # 以前用一条正则整体匹配 `#xxx … #!` 连正文一起删，凡是带 #lore 的描述都会变成空字符串。
     s = _FMT_RE.sub("", s)
+    s = s.replace("#!", "")
     s = s.replace("[Nbsp]", " ").replace("\\n", " ").replace("\\t", " ")
     s = s.replace("”", "").replace("“", "")
     return re.sub(r"\s+", " ", s).strip()
@@ -520,6 +556,258 @@ def _scan_stances(idir, loc):
     return out
 
 
+# ----------------------------------------------------------------- 利益集团
+def _hsv_css(body):
+    """`color = hsv{ 0.63 0.40 0.69 }` → CSS 颜色（集团在界面上的主题色）。"""
+    m = re.search(r"color\s*=\s*hsv\s*\{\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)", body)
+    if not m:
+        return ""
+    try:
+        h, s, v = (float(m.group(i)) for i in (1, 2, 3))
+    except Exception:
+        return ""
+    r, g, b = colorsys.hsv_to_rgb(h % 1.0, min(s, 1.0), min(v, 1.0))
+    return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
+
+
+def _split_branches(body):
+    """把 `if / else_if / else` 切成 [(kind, 块正文, 前置注释)] —— on_enable 的国家分支用。
+
+    前置注释很重要：脚本里 `# Daimyo` 这类注释就是该分支唯一可读的说明。
+    """
+    out = []
+    if not body:
+        return out
+    pat = re.compile(r"\b(if|else_if|else)\s*=\s*\{")
+    i = 0
+    prev = 0
+    while True:
+        m = pat.search(body, i)
+        if not m:
+            break
+        lead = body[prev:m.start()]
+        cm = re.findall(r"#\s*([^\n]+)", lead)
+        note = cm[-1].strip() if cm else ""
+        st = body.index("{", m.end() - 1)
+        # 注释也可能写在花括号同一行：`if = { # Squattocracy`
+        ln_end = body.find("\n", st)
+        inline = re.findall(r"#\s*([^\n]+)", body[st + 1:ln_end if ln_end > 0 else len(body)])
+        if inline:
+            note = inline[-1].strip()
+        d = 0
+        end = -1
+        for j in range(st, len(body)):
+            if body[j] == "{":
+                d += 1
+            elif body[j] == "}":
+                d -= 1
+                if d == 0:
+                    end = j
+                    break
+        if end < 0:
+            break
+        out.append((m.group(1), body[st + 1:end], note))
+        prev = end + 1
+        i = end + 1
+    return out
+
+
+def _dlc_names(gdir, loc):
+    """DLC 内容包显示名：`rp1_content` ← game/dlc/dlc008_rp1。"""
+    out = {}
+    ddir = os.path.join(gdir, D_DLC)
+    if not os.path.isdir(ddir):
+        return out
+    for name in os.listdir(ddir):
+        fp = os.path.join(ddir, name)
+        if not os.path.isdir(fp):
+            continue
+        # dlc008_rp1 → rp1；dlc004_voice_of_the_people → voice_of_the_people
+        parts = name.split("_", 1)
+        if len(parts) < 2 or not parts[0].lower().startswith("dlc"):
+            continue
+        code = parts[1]
+        label = ""
+        for jf in glob.glob(os.path.join(fp, "*.dlc.json")):
+            try:
+                with open(jf, encoding="utf-8-sig") as f:
+                    meta = json.load(f)
+                label = ((meta.get("displayName") or {}).get("en") or "").strip()
+            except Exception:
+                label = ""
+            break
+        if not label:
+            label = _L(loc, parts[0]) or ""
+        if label:
+            out[code] = label
+    return out
+
+
+def _scan_igs(gdir, loc, dlcs):
+    """8 个利益集团：意识形态、基础特质、权重、按国家给的特质。"""
+    out = []
+    for f in sorted(glob.glob(os.path.join(gdir, D_IG, "*.txt"))):
+        txt = _read(f)
+        if not txt:
+            continue
+        for m in re.finditer(r"^(ig_[a-z0-9_]+)\s*=\s*\{", txt, re.M):
+            key = m.group(1)
+            body = _block_body(txt, key)
+
+            # 意识形态：默认一套（集团本身的立场）+ 人物一套（领袖个人倾向）
+            ideos = []
+            for ik in _list_block(body, "ideologies"):
+                ideos.append({"key": ik, "name": _L(loc, ik) or ik,
+                              "desc": _L(loc, ik + "_desc")})
+            char_ideos = [{"key": ik, "name": _L(loc, ik) or ik}
+                          for ik in _list_block(body, "character_ideologies")]
+
+            base_traits = [{"key": tk, "name": _L(loc, tk) or tk}
+                           for tk in _list_block(body, "traits")]
+
+            # 权重：全部是 `key = { value = … }`，只取基础值
+            weights = []
+            for wk, wlabel in IG_WEIGHTS:
+                wb = _sub(body, wk)
+                if not wb:
+                    continue
+                v = _scalar(wb, "value")
+                if v == "":
+                    continue
+                try:
+                    fv = float(v)
+                    shown = ("%g" % fv)
+                except Exception:
+                    shown = v
+                weights.append({"label": wlabel, "value": shown})
+
+            # 按国家（或 DLC）分支追加的特质 —— 每个牌子下面挂的那几个"专属"
+            excl = []
+            for kind, blk, note in _split_branches(_sub(body, "on_enable")):
+                tks = list(dict.fromkeys(
+                    re.findall(r"set_ig_trait\s*=\s*ig_trait:([a-z0-9_]+)", blk)))
+                if not tks:
+                    continue
+                tags = []
+                for t in re.findall(r"\bc:([A-Z]{3})\b", blk):
+                    if t not in tags:
+                        tags.append(t)
+                dlc_keys = []
+                for dk in re.findall(r"has_dlc_feature\s*=\s*([a-z0-9_]+)", blk):
+                    if dk not in dlc_keys:
+                        dlc_keys.append(dk)
+                if tags:
+                    who = " / ".join([_L(loc, t) or t for t in tags])
+                else:
+                    # 没有国家标签时，看是不是按国教或主流文化分的（虔信者按宗教、美国南方按文化）
+                    rels = list(dict.fromkeys(
+                        re.findall(r"country_has_state_religion\s*=\s*rel:([a-z0-9_]+)", blk)))
+                    cults = list(dict.fromkeys(
+                        re.findall(r"country_has_primary_culture\s*=\s*cu:([a-z0-9_]+)", blk)))
+                    if rels:
+                        who = "国教：" + " / ".join([_L(loc, r) or r for r in rels])
+                        if cults:
+                            who += "，主流文化 " + " / ".join([_L(loc, c) or c for c in cults])
+                    elif cults:
+                        who = "主流文化：" + " / ".join([_L(loc, c) or c for c in cults])
+                    elif note:
+                        # 脚本注释是唯一线索（如日本大名、波雅尔、牧民）
+                        who = "其它条件：" + note
+                    elif kind == "else":
+                        who = "其他国家"
+                    else:
+                        who = "其它条件"
+                if dlc_keys:
+                    names = [dlcs.get(dk.replace("_content", ""), "") for dk in dlc_keys]
+                    names = [x for x in names if x]
+                    who += "（需 %s）" % ("、".join(names) if names else "DLC")
+                excl.append({"who": who, "traits": [_L(loc, tk) or tk for tk in tks],
+                             "tkeys": tks, "dlc": dlc_keys, "tags": tags,
+                             "uncond": kind == "else"})
+
+            out.append({
+                "key": key,
+                "name": _L(loc, key) or key,
+                "desc": _L(loc, key + "_desc"),
+                "icon": _icon_rel(_scalar(body, "texture")),
+                "iconKind": "ig",
+                "cat": "利益集团",
+                "color": _hsv_css(body),
+                "index": _scalar(body, "index"),
+                "ideos": ideos,
+                "charIdeos": char_ideos,
+                "baseTraits": base_traits,
+                "weights": weights,
+                "exclusive": excl,
+                "secs": [],
+            })
+
+    def _ik(x):
+        try:
+            return int(x.get("index") or 99)
+        except Exception:
+            return 99
+    out.sort(key=_ik)
+    return out
+
+
+def _scan_ig_traits(tdir, loc, owner, ig_meta, ig_order):
+    """98 条集团特质：归属哪个集团、什么好感档位生效、加什么效果。"""
+    out = []
+    for f in sorted(glob.glob(os.path.join(tdir, "*.txt"))):
+        txt = _read(f)
+        if not txt:
+            continue
+        for m in re.finditer(r"^(ig_trait_[a-z0-9_]+)\s*=\s*\{", txt, re.M):
+            key = m.group(1)
+            body = _block_body(txt, key)
+            owners = owner.get(key) or []
+            # 归属：优先按脚本里的引用，读不到再退回文件名（00_landed_interest → landowners）
+            if not owners:
+                guess = os.path.basename(f).replace("_traits.txt", "").split("_", 1)[-1]
+                owners = ["ig_" + guess.replace("landed_interest", "landowners")]
+            cat = "、".join([ig_meta.get(o, {}).get("name", o) for o in owners])
+            cat_key = owners[0] if owners else ""
+            color = ig_meta.get(cat_key, {}).get("color", "")
+
+            lo = _scalar(body, "min_approval")
+            hi = _scalar(body, "max_approval")
+            if lo:
+                cond = "%s及以上" % APPROVAL_LABEL.get(lo, lo)
+            elif hi:
+                cond = "%s及以下" % APPROVAL_LABEL.get(hi, hi)
+            else:
+                cond = "始终生效"
+
+            effects = _mod_lines(_sub(body, "modifier"), loc)
+
+            attrs = [{"label": "生效条件", "value": cond}]
+            if len(owners) > 1:
+                attrs.append({"label": "归属", "value": "%d 个集团共用" % len(owners)})
+
+            out.append({
+                "key": key,
+                "name": _L(loc, key) or key,
+                "desc": _L(loc, key + "_desc"),
+                "icon": _icon_rel(_scalar(body, "icon")),
+                "iconKind": "igtrait",
+                "cat": cat,
+                "catKey": cat_key,
+                "color": color,
+                "approval": cond,
+                "approvalKey": lo or hi,
+                "effects": effects,
+                "secs": [],
+            })
+
+    def _k(x):
+        return (ig_order.get(x.get("catKey"), 99),
+                APPROVAL_ORDER.index(x["approvalKey"])
+                if x.get("approvalKey") in APPROVAL_ORDER else 9, x["name"])
+    out.sort(key=_k)
+    return out
+
+
 def _build(root, ui_lang):
     lang = LANG_MAP.get(ui_lang or "zh", "simp_chinese")
     gdir = _game_dir(root)
@@ -663,10 +951,66 @@ def _build(root, ui_lang):
                   "n": sum(1 for g in law_groups if g["area"] == a)}
                  for a in AREA_ORDER if any(g["area"] == a for g in law_groups)]
 
+    # ---- 利益集团 ----
+    igs = _scan_igs(gdir, loc, _dlc_names(gdir, loc))
+    owner = {}
+    for it in igs:
+        for t in it["baseTraits"]:
+            owner.setdefault(t["key"], [])
+            if it["key"] not in owner[t["key"]]:
+                owner[t["key"]].append(it["key"])
+        for e in it["exclusive"]:
+            for tk in e.get("tkeys") or []:
+                owner.setdefault(tk, [])
+                if it["key"] not in owner[tk]:
+                    owner[tk].append(it["key"])
+    ig_meta = {it["key"]: it for it in igs}
+    ig_order = {it["key"]: i for i, it in enumerate(igs)}
+    ig_traits = _scan_ig_traits(os.path.join(gdir, D_IGT), loc, owner, ig_meta, ig_order)
+
+    for it in igs:
+        attrs = [{"label": "基础特质", "value": "%d 个" % len(it["baseTraits"])},
+                 {"label": "默认意识形态", "value": "%d 个" % len(it["ideos"])}]
+        if it["exclusive"]:
+            attrs.append({"label": "国家专属", "value": "%d 组" % len(it["exclusive"])})
+        it["attrs"] = attrs
+        it["effects"] = []
+
+        secs = []
+        if it["ideos"]:
+            secs.append({"label": "默认意识形态", "kind": "list",
+                         "items": [("%s：%s" % (x["name"], x["desc"])) if x["desc"] else x["name"]
+                                   for x in it["ideos"]],
+                         "hint": "集团本身对各类法律的表决态度由这套意识形态决定"})
+        if it["charIdeos"]:
+            secs.append({"label": "人物意识形态", "kind": "chips",
+                         "items": [x["name"] for x in it["charIdeos"]],
+                         "hint": "该集团的领袖角色可能带有的个人倾向"})
+        if it["baseTraits"]:
+            secs.append({"label": "基础特质", "kind": "chips",
+                         "items": [x["name"] for x in it["baseTraits"]]})
+        if it["weights"]:
+            secs.append({"label": "政治力量权重", "kind": "list",
+                         "items": ["%s：%s" % (w["label"], w["value"]) for w in it["weights"]],
+                         "hint": "该集团从各来源获得政治力量的基础倍率，实际值还会被法律与条件修正"})
+        if it["exclusive"]:
+            secs.append({"label": "按国家获得的特质", "kind": "list",
+                         "items": ["%s → %s" % (e["who"], "、".join(e["traits"]))
+                                   for e in it["exclusive"]],
+                         "hint": "该集团在这些国家成立时会额外带上这些特质"})
+        it["secs"] = secs
+
+    # 特质页按归属集团分类
+    icnt = {}
+    for it in ig_traits:
+        icnt[it["catKey"]] = icnt.get(it["catKey"], 0) + 1
+    ig_list = [{"key": it["key"], "label": it["name"], "color": it["color"],
+                "n": icnt.get(it["key"], 0)} for it in igs]
+
     tabs = []
     for t in TABS:
         d = dict(t)
-        d["count"] = len(items) if t["id"] == "laws" else 0
+        d["count"] = {"laws": len(items), "igs": len(igs), "igtraits": len(ig_traits)}.get(t["id"], 0)
         tabs.append(d)
 
     return {
@@ -681,6 +1025,9 @@ def _build(root, ui_lang):
         "laws": items,
         "lawGroups": law_groups,
         "lawAreas": law_areas,
+        "igs": igs,
+        "igTraits": ig_traits,
+        "igList": ig_list,
         "cached": False,
         "buildSeconds": 0,
     }
@@ -693,10 +1040,12 @@ _MEM = {"key": "", "data": None}
 
 def _sig(root, loc_lang):
     parts = [V3_VER, root, loc_lang]
-    try:
-        parts.append(os.path.getmtime(os.path.join(_game_dir(root), D_LAWS)))
-    except Exception:
-        parts.append(0)
+    g = _game_dir(root)
+    for d in (D_LAWS, D_IG, D_IGT):
+        try:
+            parts.append("%s=%d" % (d, os.path.getmtime(os.path.join(g, d))))
+        except Exception:
+            parts.append(0)
     return "|".join(str(x) for x in parts)
 
 
@@ -711,6 +1060,7 @@ def _load(game_root="", ui_lang="zh", force=False):
     if not root:
         return {"ok": False, "supported": True, "game": "vic3", "gameName": "Victoria 3",
                 "tabs": [], "laws": [], "lawGroups": [], "lawAreas": [],
+                "igs": [], "igTraits": [], "igList": [],
                 "error": "没找到游戏本体目录，请在设置里确认《维多利亚 3》的安装位置"}
     lang = LANG_MAP.get(ui_lang or "zh", "simp_chinese")
     sig = _sig(root, lang)
@@ -756,20 +1106,38 @@ def _load(game_root="", ui_lang="zh", force=False):
     return data
 
 
-def law_icon_png(game_root, name) -> str:
-    """法律图标的本地 PNG（DDS 转一次，之后直接读缓存）。失败返回空串。"""
+ICON_KINDS = {
+    "": "law_icons",
+    "law": "law_icons",
+    "ig": "ig_icons",
+    "igtrait": "ig_trait_icons",
+}
+
+
+def icon_png(game_root, name, kind="") -> str:
+    """图标转成 PNG 存本地（一张只转一次）。
+
+    `kind` 决定 `gfx/interface/icons/` 下的子目录：法律用 law_icons、
+    利益集团用 ig_icons、集团特质用 ig_trait_icons。
+    """
     name = (name or "").strip()
     if not name:
         return ""
+    sub = ICON_KINDS.get((kind or "").strip().lower(), "law_icons")
     root = game_root_of(game_root)
     if not root:
         return ""
     safe = re.sub(r"[^0-9A-Za-z_]", "_", name)
-    out = os.path.join(_icon_dir(), safe + ".png")
+    prefix = "" if sub == "law_icons" else sub.replace("law_icons", "law") + "_"
+    out = os.path.join(_icon_dir(), prefix + safe + ".png")
     if os.path.isfile(out) and os.path.getsize(out) > 0:
         return out
 
-    src = os.path.join(_game_dir(root), "gfx", "interface", "icons", "law_icons", name + ".dds")
+    src = os.path.join(_game_dir(root), "gfx", "interface", "icons", sub, name + ".dds")
+    if not os.path.isfile(src):
+        # 个别图标散落在同一层目录里
+        alt = os.path.join(_game_dir(root), "gfx", "interface", "icons", name + ".dds")
+        src = alt if os.path.isfile(alt) else src
     if not os.path.isfile(src):
         return ""
     try:
@@ -785,3 +1153,8 @@ def law_icon_png(game_root, name) -> str:
         return out
     except Exception:
         return ""
+
+
+def law_icon_png(game_root, name) -> str:
+    """法律图标（老接口，保留给别处调用）。"""
+    return icon_png(game_root, name, "law")

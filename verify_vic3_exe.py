@@ -112,7 +112,34 @@ def main():
                 n = len(s.get("items") or s.get("rows") or s.get("tiers") or [])
                 print("        · %-8s %-16s %d 项" % (s.get("kind"), s.get("label") or "", n))
 
-        # 5) 图标接口（DDS → PNG）
+        # 5) 用到的其它类型也核一遍（集团 / 集团特质 / 图标）
+        igs = d.get("igs") or []
+        trs = d.get("igTraits") or []
+        il = d.get("igList") or []
+        print("  利益集团 %d 个 / 集团特质 %d 条 / 分类 %d 项"
+              % (len(igs), len(trs), len(il)))
+        if igs:
+            g = next((x for x in igs if x.get("key") == "ig_landowners"), igs[0])
+            print("  集团样例：%s 色=%s 基础特质=%d 权重=%d 专属分支=%d"
+                  % (g.get("name"), g.get("color"), len(g.get("baseTraits") or []),
+                     len(g.get("weights") or []), len(g.get("exclusive") or [])))
+            ok = ok and bool(g.get("color")) and bool(g.get("weights"))
+        if trs:
+            t = next((x for x in trs if x.get("key") == "ig_trait_noblesse_oblige"), trs[0])
+            print("  特质样例：%s 归属=%s 条件=%s 效果=%s"
+                  % (t.get("name"), t.get("cat"), t.get("approval"), (t.get("effects") or [])[:2]))
+            ok = ok and bool(t.get("cat")) and bool(t.get("effects"))
+            try:
+                b2, h2 = get_raw(base + "/api/wiki/law-icon?n=" + urllib.parse.quote(t.get("icon") or "")
+                                 + "&k=igtrait", 60)
+                print("  特质图标：%s  %d 字节  %s"
+                      % (h2.get("Content-Type"), len(b2), "PNG" if b2[:4] == b"\x89PNG" else "非PNG"))
+                ok = ok and b2[:4] == b"\x89PNG"
+            except Exception as ex:
+                print("  特质图标失败：", ex)
+                ok = False
+
+        # 6) 图标接口（DDS → PNG）
         icon = (one or {}).get("icon") or ""
         if icon:
             try:
@@ -124,7 +151,8 @@ def main():
                 print("  图标接口失败：", ex)
                 ok = False
 
-        ok = ok and bool(d.get("supported")) and len(laws) == 148 and total == 148
+        ok = (ok and bool(d.get("supported")) and len(laws) == 148 and total == 254
+              and len(igs) == 8 and len(trs) == 98)
     finally:
         if "--keep" not in sys.argv:
             kill_all(pids_of_exe())
