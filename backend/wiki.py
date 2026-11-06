@@ -29,7 +29,7 @@ try:                                    # 缓存放程序目录，和 dlc_data_*
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-WIKI_VER = 29                            # 解析逻辑变更时 +1，强制重建旧缓存
+WIKI_VER = 30                            # 解析逻辑变更时 +1，强制重建旧缓存
 
 # 勋号兵种（any_accolade）里 accolade_attribute_level 的 type 取值全集：
 # 部分是 _attribute 后缀的勋号属性键（在 accolades 本地化里有中文名），
@@ -79,7 +79,6 @@ D_RELIGION = os.path.join("common", "religion", "religion_types")
 D_TENET = os.path.join("common", "religion", "tenet_types")
 D_DOCTRINE = os.path.join("common", "religion", "doctrine_types")
 D_INNOV = os.path.join("common", "culture", "innovations")
-D_LEGACY = os.path.join("common", "dynasty_legacies")
 
 # 百科分类注册表：以后加新分类，写一个 _collect_xxx() 并在这里登记即可
 CATEGORIES = [
@@ -667,41 +666,17 @@ def _unlock_prefix(kind: str, zh: bool) -> str:
     return ""
 
 
-def _legacy_blocks(text: str) -> list:
-    """从 dynasty_legacies 文件抽取 `dynasty_legacy = { KEY = { ... } }` 块（嵌套在 category 下）。"""
-    out = []
-    pat = re.compile(r"dynasty_legacy\s*=\s*\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\{")
-    i = 0
-    n = len(text)
-    while i < n:
-        m = pat.search(text, i)
-        if not m:
-            break
-        key = m.group(1)
-        start = m.end()
-        d, j = 1, start
-        while j < n and d > 0:
-            c = text[j]
-            if c == "{":
-                d += 1
-            elif c == "}":
-                d -= 1
-            j += 1
-        out.append((key, text[start:j - 1]))
-        i = j
-    return out
-
-
 def _load_unlock_maa(game_root: str, loc: dict):
-    """扫描 traditions + innovations + dynasty_legacies，建立两套解锁映射（见上方全局变量说明）。
+    """扫描 traditions + innovations，建立两套解锁映射（见上方全局变量说明）。
 
     文化兵种的解锁有两类写法：
       - 参数写法：传统里 `unlock_maa_<x> = yes`，兵种 can_recruit 用
         `valid_for_maa_trigger = { PARAMETER = unlock_maa_<x> }`
       - 等号写法：革新里 `unlock_maa = <x>`（如 innovation_caballeros 解锁 caballero），
         兵种本身常无 can_recruit 块，纯靠该革新（并可能带 region 地区限定）解锁
-    家族传承（dynasty_legacy）也能解锁兵种：legacy 块里写 `unlock_maa = <x>` 或 `unlock_maa_<x> = yes`，
-    如家族近卫（house_guard）由『家族近卫』家族传承解锁 → 显示『需要家族传承：家族近卫』。
+    注：家族传承（dynasty_legacy）解锁兵种走的不是 unlock_maa，而是兵种自身
+    `can_recruit = { dynasty ?= { has_dynasty_perk = X } }`（如家族近卫由 warfare_legacy_5
+    『家族近卫』解锁），由 `_recruit_reqs` 的 has_dynasty_perk 分支处理，故这里不扫 dynasty_legacies。
     本地化里 `culture_parameter_unlock_maa_<x>` 的原文是『可以招募[GetMaA('x').GetName]兵士』，
     纯属废话，不能当条件显示。
     """
@@ -746,28 +721,8 @@ def _load_unlock_maa(game_root: str, loc: dict):
                 for tok in set(re.findall(r"unlock_[A-Za-z0-9_]+", body)):
                     if re.search(r"\b%s\s*=\s*yes\b" % re.escape(tok), body):
                         add_token(tok, kind, name)
-    def scan_legacy():
-        for f in sorted(glob.glob(os.path.join(game_root, D_LEGACY, "*.txt"))):
-            try:
-                text = _read(f)
-            except Exception:
-                continue
-            for key, body in _legacy_blocks(text):
-                if "unlock_" not in body:
-                    continue
-                name = _resolve_name(loc.get(key) or loc.get(key + "_name") or _title(key), loc)
-                # 等号写法 unlock_maa = <x>
-                for mk in re.findall(r"unlock_maa\s*=\s*([a-z_0-9]+)", body):
-                    add_token("unlock_maa_" + mk, "dynasty_legacy", name)
-                    add_key(mk, "dynasty_legacy", name, None)
-                # 参数写法 unlock_maa_<x> = yes
-                for tok in re.findall(r"unlock_maa_([A-Za-z0-9_]+)", body):
-                    if re.search(r"\bunlock_maa_%s\s*=\s*yes\b" % re.escape(tok), body):
-                        add_token("unlock_maa_" + tok, "dynasty_legacy", name)
-                        add_key(tok, "dynasty_legacy", name, None)
     scan(D_TRAD, "tradition")
     scan(D_INNOV, "innovation")
-    scan_legacy()
     return token_map, key_map
 
 
@@ -884,11 +839,11 @@ def _recruit_reqs(body: str, loc: dict, zh: bool = True) -> list:
     # 兜底：any_accolade 但没解析出具体属性
     if "any_accolade" in cr and not accolade_hit:
         add(("需要对应勋号/勋章", "Requires an appropriate accolade") if zh else "Requires an appropriate accolade")
-    # 王朝 perk
+    # 家族传承（dynasty perk）：如家族近卫 requires warfare_legacy_5『家族近卫』
     for p in re.findall(r"has_dynasty_perk\s*=\s*([a-z_0-9]+)", cr):
         t = loc.get(p) or loc.get(p + "_name")
         if t:
-            add(("需要王朝传承：" if zh else "Dynasty perk: ") + t)
+            add(("需要家族传承：" if zh else "Requires dynasty legacy: ") + t)
     return out[:8]
 
 
@@ -1536,6 +1491,16 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
                 cb = _sub(body, "counters")
                 if cb:
                     needed.update(_pairs(cb).keys())
+                # 兵种招募条件引用的本地化键（家族传承 has_dynasty_perk / 革新 / 政体 / 文化参数）
+                # 例：house_guard 的 can_recruit = { dynasty ?= { has_dynasty_perk = warfare_legacy_5 } }
+                #     需加载 warfare_legacy_5_name（『家族近卫』），否则显示不出「需要家族传承」。
+                cr_body = _sub(body, "can_recruit")
+                if cr_body:
+                    for fld in ("has_dynasty_perk", "has_innovation", "has_government",
+                                "has_cultural_parameter", "PARAMETER"):
+                        for v in re.findall(r"\b" + fld + r"\s*=\s*([A-Za-z_0-9]+)", cr_body):
+                            needed.update((v, v + "_name", "culture_parameter_" + v,
+                                           "game_concept_" + v))
 
         raw_trads = []
         for f in glob.glob(os.path.join(game_root, D_TRAD, "*.txt")):
