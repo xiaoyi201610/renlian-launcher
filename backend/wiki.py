@@ -32,6 +32,7 @@ except Exception:                       # 单独跑测试时兜底
 import stellaris                        # 群星百科（独立模块，按 game 分派）
 import hoi4                             # 钢铁雄心百科（独立模块，按 game 分派）
 import vic3                             # 维多利亚 3 百科（独立模块，按 game 分派）
+import eu4                              # 欧陆风云 4 百科（独立模块，按 game 分派）
 
 WIKI_VER = 36                            # 解析逻辑变更时 +1，强制重建旧缓存
 
@@ -107,7 +108,7 @@ CATEGORIES = [
 ]
 
 # 目前只有 CK3 与群星有对应脚本结构；其他游戏返回 supported=false
-SUPPORTED_GAMES = {"ck3", "stellaris", "hoi4", "vic3"}
+SUPPORTED_GAMES = {"ck3", "stellaris", "hoi4", "vic3", "eu4"}
 
 # 界面语言 → 游戏本地化目录
 LANG_MAP = {
@@ -1669,6 +1670,27 @@ def focus_icon(game_root: str, gfx_name: str) -> str:
         return ""
 
 
+def mission_tree(game: str, game_root: str, tid: str, ui_lang: str = "zh") -> dict:
+    """单棵 EU4 任务树（前端切树时才拉）。"""
+    game = (game or "").lower()
+    if game != "eu4":
+        return {"ok": False, "error": "unsupported"}
+    if not eu4._TREES:
+        try:
+            eu4.load(game_root, ui_lang, False)
+        except Exception:
+            pass
+    return eu4.mission_tree(tid)
+
+
+def mission_icon(game_root: str, gfx_name: str) -> str:
+    """EU4 任务图标 PNG 路径（DDS 按需转换 + 缓存）。"""
+    try:
+        return eu4.mission_icon_png(game_root, gfx_name)
+    except Exception:
+        return ""
+
+
 def law_icon(game_root: str, name: str, kind: str = "") -> str:
     """维多利亚 3 的图标 PNG 路径（法律 / 利益集团 / 集团特质，DDS 按需转换 + 缓存）。"""
     try:
@@ -1700,6 +1722,9 @@ def load(game: str, game_root: str, ui_lang: str = "zh", force: bool = False) ->
     if game == "vic3":
         # 维多利亚 3：目前做了法律（法律组 / 意识形态立场 / 接受度等级）
         return vic3.load(game_root, ui_lang, force)
+    if game == "eu4":
+        # 欧陆风云 IV：思想组 / 陆军 / 单位 / 海军 / 时代 / 任务树
+        return eu4.load(game_root, ui_lang, force)
     if game not in SUPPORTED_GAMES:
         return {"ok": True, "supported": False, "game": game, "maa": [], "cultures": [],
                 "traditions": [], "religions": [], "tenets": [], "doctrines": [],

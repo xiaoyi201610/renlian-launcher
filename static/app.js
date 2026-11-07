@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7.0.4';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.7.0.5';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -484,6 +484,7 @@ function wikiSite() {
   if (g === 'stellaris') return 'https://stellaris.paradoxwikis.com/';
   if (g === 'hoi4') return 'https://hoi4.paradoxwikis.com/';
   if (g === 'vic3') return 'https://vic3.paradoxwikis.com/';
+  if (g === 'eu4') return 'https://eu4.paradoxwikis.com/';
   return WIKI_SITE;
 }
 
@@ -501,6 +502,9 @@ const WK_TAB_KEY = {
   religions: 'wiki.tabReligions', tenets: 'wiki.tabTenets', doctrines: 'wiki.tabDoctrines',
   innovations: 'wiki.tabInnovations', laws: 'wiki.tabLaws',
   igs: 'wiki.tabIGs', igtraits: 'wiki.tabIGTraits',
+  ideas: 'wiki.tabIdeas', army: 'wiki.tabArmy', landunits: 'wiki.tabLandUnits',
+  navalunits: 'wiki.tabNavalUnits', navy: 'wiki.tabNavy', ages: 'wiki.tabAges',
+  missions: 'wiki.tabMissions',
 };
 function wkTabLabel(t) {
   if (WK_TAB_KEY[t.id]) return T(WK_TAB_KEY[t.id]);
@@ -560,6 +564,7 @@ async function renderWiki() {
       <span class="wk-spin"></span>${esc(T('wiki.building'))}</div></div>`;
   }
 
+  const prevGame = WIKI_ST.data && WIKI_ST.data.game;
   let d = null;
   try {
     d = await api('/api/wiki' + (WIKI_ST.force ? '?refresh=1' : ''));
@@ -580,6 +585,10 @@ async function renderWiki() {
   }
 
   WIKI_ST.data = d;
+  if (prevGame && prevGame !== d.game) {
+    // 换游戏时清空国策/任务树画布缓存，避免 HOI4 与 EU4 的树 id 串用
+    FX.cache = {}; FX.tree = ''; FX.data = null; FX.sel = ''; FX.q = '';
+  }
   WIKI_ST.owners = null;
   WIKI_ST.open = '';
   // 换游戏后旧 tab 可能不存在，回落到第一个可用分类
@@ -904,7 +913,7 @@ function wikiRow(it) {
     const effTitle = isTenet ? T('wiki.coreEffects') : T('wiki.effects');
     const pf = it.personal || [];
     /* 群星的名字本身就是中文，再挂一行英文字号反而挤；CK3 保留英文副标题便于对照 wiki */
-    const isSl = (WIKI_ST.data && ['stellaris', 'hoi4', 'vic3'].includes(WIKI_ST.data.game));
+    const isSl = (WIKI_ST.data && ['stellaris', 'hoi4', 'vic3', 'eu4'].includes(WIKI_ST.data.game));
     /* 维多利亚 3 的图标：DDS 由后端转 PNG，按需懒加载；利益集团/特质/法律分属不同子目录 */
     const ico = it.icon
       ? `<span class="wk-ico"><img loading="lazy" src="/api/wiki/law-icon?n=${encodeURIComponent(it.icon)}${it.iconKind ? '&k=' + it.iconKind : ''}" alt=""
@@ -988,10 +997,11 @@ const FX = {
   tree: '', data: null, cache: {}, scale: 1, tx: 0, ty: 0, sel: '', q: '',
   io: null, bx: 0, by: 0, px: 0, py: 0, drag: false,
 };
+function fxIsEu4() { return !!(WIKI_ST.data && WIKI_ST.data.game === 'eu4'); }
 const FX_X = 96, FX_Y = 132, FX_W = 88, FX_ICON = 64;
 
 function fxTreeList(d) {
-  const ts = (d.focusTrees || []).slice();
+  const ts = ((d.game === 'eu4' ? d.missionTrees : d.focusTrees) || []).slice();
   // 通用国策树放最前面，其余按名字排（中文用 localeCompare）
   ts.sort((a, b) => (b.default ? 1 : 0) - (a.default ? 1 : 0) ||
     String(a.name).localeCompare(String(b.name), 'zh'));
@@ -1031,7 +1041,7 @@ async function paintFocus(tabs) {
     <div class="fx-bar">
       <select class="inp wk-sel" id="fxTree">${list.map(t =>
         `<option value="${esc(t.id)}" ${FX.tree === t.id ? 'selected' : ''}>${esc(t.name)}（${t.n}）</option>`).join('')}</select>
-      <input class="inp wk-search" id="fxQ" value="${esc(FX.q)}" placeholder="${esc(T('wiki.fxSearch'))}">
+      <input class="inp wk-search" id="fxQ" value="${esc(FX.q)}" placeholder="${esc(T(fxIsEu4() ? 'wiki.msSearch' : 'wiki.fxSearch'))}">
       <span class="fx-sp"></span>
       <button class="fx-btn" id="fxOut" title="${esc(T('wiki.fxZoomOut'))}">−</button>
       <span class="fx-zoom" id="fxZoom">100%</span>
@@ -1045,7 +1055,7 @@ async function paintFocus(tabs) {
         <div id="fxNodes"></div>
       </div>
     </div>
-    <div class="fx-detail" id="fxDetail"><div class="fx-pd">${esc(T('wiki.fxPick'))}</div></div>`;
+    <div class="fx-detail" id="fxDetail"><div class="fx-pd">${esc(T(fxIsEu4() ? 'wiki.msPick' : 'wiki.fxPick'))}</div></div>`;
 
   bindFxTabs();
   $('#wkRefresh').onclick = async () => { WIKI_ST.force = true; FX.cache = {}; await renderWiki(); };
@@ -1155,7 +1165,7 @@ async function fxLoad(tid) {
   let t = FX.cache[tid];
   if (!t) {
     try {
-      t = await api('/api/wiki/focus?tree=' + encodeURIComponent(tid));
+      t = await api((fxIsEu4() ? '/api/wiki/mission?tree=' : '/api/wiki/focus?tree=') + encodeURIComponent(tid));
     } catch (e) {
       t = null;
     }
@@ -1170,7 +1180,7 @@ async function fxLoad(tid) {
   fxDraw(t);
   fxHome();
   const det = $('#fxDetail');
-  if (det) det.innerHTML = `<div class="fx-pd">${esc(T('wiki.fxPick'))}</div>`;
+  if (det) det.innerHTML = `<div class="fx-pd">${esc(T(fxIsEu4() ? 'wiki.msPick' : 'wiki.fxPick'))}</div>`;
 }
 
 function fxDraw(t) {
@@ -1218,7 +1228,7 @@ function fxDraw(t) {
     const p = pos[n.id];
     return `<div class="fx-node" data-id="${esc(n.id)}" style="left:${p.x}px;top:${p.y}px">
       <div class="fx-ic">${n.icon
-        ? `<img alt="" data-src="/api/wiki/focus-icon?n=${encodeURIComponent(n.icon)}">`
+        ? `<img alt="" data-src="${fxIsEu4() ? '/api/wiki/mission-icon?n=' : '/api/wiki/focus-icon?n='}${encodeURIComponent(n.icon)}">`
         : `<span class="fx-no">◆</span>`}</div>
       <span class="fx-nm">${esc(n.nm)}</span></div>`;
   }).join('');
@@ -1289,6 +1299,8 @@ function fxMark() {
     const hit = String(n.nm || '').toLowerCase().includes(q) ||
       String(n.id).toLowerCase().includes(q) ||
       String(n.ds || '').toLowerCase().includes(q) ||
+      String(n.cond || '').toLowerCase().includes(q) ||
+      String((n.pre || []).join(' ')).toLowerCase().includes(q) ||
       (n.fx || []).some(x => String(x).toLowerCase().includes(q));
     el.classList.toggle('hit', hit);
     el.classList.toggle('dim', !hit);
@@ -1311,6 +1323,22 @@ function fxDetail(id) {
   meta.push(`${esc(T('wiki.fxCost'))} ${esc(n.cost || '—')}`);
   if (n.bypass) meta.push(esc(T('wiki.fxBypass')));
   (n.filters || []).filter(Boolean).forEach(f => meta.push(esc(f)));
+  if (fxIsEu4()) {
+    const cond = n.cond || [];
+    box.innerHTML = `
+      <div class="fx-dh"><b>${esc(n.nm)}</b><small>${esc(n.id)}</small></div>
+      ${n.ds ? `<div class="fx-desc">${esc(n.ds)}</div>` : ''}
+      <div class="fx-h">${esc(T('wiki.msCond'))}</div>
+      ${cond.length ? `<ul class="fx-eff">${cond.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`
+        : `<div class="fx-pd">${esc(T('wiki.noEffects'))}</div>`}
+      ${pre.length ? `<div class="fx-h">${esc(T('wiki.msPre'))}</div>
+        <div class="fx-meta">${pre.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+      <div class="fx-h">${esc(T('wiki.msReward'))}</div>
+      ${(n.fx || []).length
+        ? `<ul class="fx-eff">${n.fx.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`
+        : `<div class="fx-pd">${esc(T('wiki.noEffects'))}</div>`}`;
+    return;
+  }
   box.innerHTML = `
     <div class="fx-dh"><b>${esc(n.nm)}</b><small>${esc(n.id)}</small></div>
     ${n.ds ? `<div class="fx-desc">${esc(n.ds)}</div>` : ''}
@@ -1386,7 +1414,7 @@ function paintWiki() {
       <div class="page-title">${esc(T('wiki.title'))}</div>
       <div class="page-sub">${esc(T('wiki.sub'))}${d.gameVer ? ` · ${esc(d.gameName || '')} ${esc(d.gameVer)}` : ''}</div>
     </div><div class="bar">
-      ${isCk3 ? `<button class="btn sm ghost" id="wkArmy">${esc(T('wiki.armyPage'))}</button>
+      ${isCk3 && d.game !== 'eu4' ? `<button class="btn sm ghost" id="wkArmy">${esc(T('wiki.armyPage'))}</button>
       <button class="btn sm ghost" id="wkCulture">${esc(T('wiki.culturePage'))}</button>` : ''}
       <button class="btn sm ghost" id="wkRefresh" title="${esc(T('wiki.refreshHint'))}">⟳ ${esc(T('wiki.refresh'))}</button>
     </div></div>

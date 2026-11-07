@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DIST_EXE = os.path.join(HERE, "dist", "人联启动器.exe")
 RELEASE = os.path.join(HERE, "release")
 PKG_NAME = "人联启动器"
-VERSION = "1.7.0.4"
+VERSION = "1.7.0.5"
 PKG = os.path.join(RELEASE, "_stage_" + PKG_NAME)
 ZIP_PATH = os.path.join(RELEASE, f"{PKG_NAME}_v{VERSION}.zip")
 
@@ -50,7 +50,7 @@ def _is_runtime_item(name: str) -> bool:
         return True
     # 启动器内嵌 webview 的浏览器档案目录：运行期生成，且常因进程未退出被锁，
     # 既不该进发布包，也避免 z.write 读被锁的 lockfile 导致整个打包失败。
-    if name in (".edge-profile", "__pycache__"):
+    if name in (".edge-profile", "__pycache__", "eu4_mission_icons"):
         return True
     # 误落到启动器目录的 P 社数据库 / dlc_load（userDir 未配置时的历史 bug 产物）：
     # 既不该进发布包，也不该被当成用户数据带出去。

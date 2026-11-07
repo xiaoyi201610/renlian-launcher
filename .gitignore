@@ -19,6 +19,7 @@ __pycache__/
 achievement_icons/
 hoi4_focus_icons/
 vic3_law_icons/
+eu4_mission_icons/
 achievement_data_*.json
 achievement_global_*.json
 dlc_data_*.json

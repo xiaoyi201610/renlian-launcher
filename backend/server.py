@@ -1115,6 +1115,29 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self._send(404, b"", "image/png")
                 return
+            if p == "/api/wiki/mission":
+                # 单棵 EU4 任务树（按需加载）
+                try:
+                    self._json(wiki.mission_tree(
+                        CTX.game, CTX.cfg.get("gameRoot") or "",
+                        q.get("tree") or "", CTX.cfg.get("uiLang") or "zh"))
+                except Exception as ex:
+                    self._json({"ok": False, "error": "读取任务树失败：%s" % ex})
+                return
+            if p == "/api/wiki/mission-icon":
+                # EU4 任务图标：DDS 转 PNG，转一次后走浏览器缓存
+                img = wiki.mission_icon(CTX.cfg.get("gameRoot") or "", q.get("n") or "")
+                if img and os.path.isfile(img):
+                    try:
+                        with open(img, "rb") as f:
+                            data = f.read()
+                        self._send(200, data, "image/png",
+                                   {"Cache-Control": "public, max-age=604800"})
+                    except Exception:
+                        self._send(404, b"", "image/png")
+                else:
+                    self._send(404, b"", "image/png")
+                return
             if p == "/api/wiki/law-icon":
                 # 维多利亚 3 的图标（法律 / 利益集团 / 集团特质）：DDS → PNG，转一次后走浏览器缓存
                 img = wiki.law_icon(CTX.cfg.get("gameRoot") or "",
