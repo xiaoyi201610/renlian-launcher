@@ -411,8 +411,8 @@ def save_config(cfg: dict) -> None:
     key = data["currentGame"]
     g = dict(games.get(key) or {})
     for fld in ("gameRoot", "userDir", "workshopDir", "lastPlayset"):
-        if cfg.get(fld):
-            g[fld] = cfg[fld]
+        if fld in cfg:
+            g[fld] = (cfg.get(fld) or "").strip()
     # gameVersion：只有和该游戏默认版本不同（用户显式改过）才写，避免脏数据
     gv = cfg.get("gameVersion")
     default_gv = GAME_DEFS[key]["defaultVersion"]

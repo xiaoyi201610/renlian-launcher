@@ -193,6 +193,23 @@ def api_gamedata() -> dict:
     }
 
 
+PATH_FIELDS = (("gameRoot", "游戏根目录"),
+               ("userDir", "用户数据目录"),
+               ("workshopDir", "创意工坊目录"))
+
+
+def _path_issues(cfg: dict) -> list:
+    """返回当前游戏没探测到或指向不存在目录的路径，供前端弹窗提示。"""
+    out = []
+    for key, label in PATH_FIELDS:
+        val = (cfg.get(key) or "").strip()
+        if not val:
+            out.append({"field": key, "label": label, "path": "", "kind": "missing"})
+        elif not os.path.isdir(val):
+            out.append({"field": key, "label": label, "path": val, "kind": "notfound"})
+    return out
+
+
 def api_state() -> dict:
     cfg = CTX.cfg
     db = CTX.db()
@@ -229,6 +246,7 @@ def api_state() -> dict:
         "browserModUrl": settings.get("browserModUrl") or f"https://steamcommunity.com/app/{_cur_appid()}/workshop/",
         "browserDlcUrl": settings.get("browserDlcUrl") or f"https://store.steampowered.com/dlc/{_cur_appid()}/",
         "backupDir": core.BACKUP_DIR,
+        "pathIssues": _path_issues(cfg),
     }
 
 
@@ -1602,9 +1620,34 @@ class Handler(BaseHTTPRequestHandler):
                             "error": first_err}); return
             if p == "/api/config":
                 cfg = dict(CTX.cfg)
-                for k in ("gameRoot", "userDir", "workshopDir", "gameVersion"):
-                    if body.get(k):
-                        cfg[k] = body[k]
+                old_root = (cfg.get("gameRoot") or "").strip()
+                old_ws = (cfg.get("workshopDir") or "").strip()
+
+                def _clean_path(v):
+                    v = (v or "").strip()
+                    if len(v) >= 2 and v[0] == v[-1] and v[0] in ("\"", "'"):
+                        v = v[1:-1].strip()
+                    return v
+
+                # resetPaths：显式清空三个路径，交给 load_config 重新自动探测
+                if body.get("resetPaths"):
+                    for k in ("gameRoot", "userDir", "workshopDir"):
+                        cfg[k] = ""
+                else:
+                    for k in ("gameRoot", "userDir", "workshopDir"):
+                        if k in body:
+                            cfg[k] = _clean_path(body[k])
+                    if "gameVersion" in body and body.get("gameVersion"):
+                        cfg["gameVersion"] = body["gameVersion"]
+
+                # 换了游戏根目录、且没有单独指定工坊目录 → 让工坊目录跟随新安装重新探测
+                new_root = (cfg.get("gameRoot") or "").strip()
+                if (new_root and old_root
+                        and os.path.normcase(new_root) != os.path.normcase(old_root)
+                        and os.path.normcase((cfg.get("workshopDir") or "").strip())
+                        == os.path.normcase(old_ws)):
+                    cfg["workshopDir"] = ""
+
                 # 版本自检地址：顶层全局配置（与 uiLang 同级），留空则不检查
                 if "updateUrl" in body:
                     cfg["updateUrl"] = (body["updateUrl"] or "").strip()
@@ -1612,10 +1655,25 @@ class Handler(BaseHTTPRequestHandler):
                           "minimizeOnLaunch", "closeOnLaunch", "useDataPathArg"):
                     if k in body:
                         cfg[k] = bool(body[k])
-                core.save_config(cfg)
+
+                warnings = []
+                for k, label in (("gameRoot", "游戏根目录"),
+                                 ("userDir", "用户数据目录"),
+                                 ("workshopDir", "创意工坊目录")):
+                    v = (cfg.get(k) or "").strip()
+                    if v and not os.path.isdir(v):
+                        warnings.append(f"{label}不存在：{v}")
+
+                try:
+                    core.save_config(cfg)
+                except Exception as e:
+                    self._json({"ok": False,
+                                "error": f"配置文件写入失败：{e}"}); return
                 CTX.reload_cfg()
                 CTX.mods(force=True)
-                self._json({"ok": True, "config": CTX.cfg}); return
+                self._json({"ok": True, "config": CTX.cfg,
+                            "warnings": warnings,
+                            "pathIssues": _path_issues(CTX.cfg)}); return
             if p == "/api/switch-game":
                 key = body.get("game") or ""
                 CTX.switch_game(key)

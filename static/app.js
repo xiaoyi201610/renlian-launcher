@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7.0.7';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.7.0.8';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -207,6 +207,36 @@ const ui = {
   alert: (message, o = {}) => dialog(Object.assign({ message, title: '提示', hideCancel: true, okText: '知道了' }, o)),
   prompt: (message, value = '', o = {}) => dialog(Object.assign({ message, input: true, value, title: '请输入' }, o)),
 };
+/* ---------------- 路径探测失败提示 ----------------
+   探测不到或目录不存在时，给出常见原因与解决办法，而不是只弹一句“找不到”。 */
+const PATH_TIPS = {
+  gameRoot: {
+    causes: '游戏没有安装或已卸载；游戏装在非默认 Steam 库、移动硬盘没挂载；Steam 注册表信息缺失；安装目录被改名或移动。',
+    fixes: '先在 Steam 里启动一次游戏；点「浏览」选到游戏安装目录（里面应有 game 文件夹和游戏 exe）；移动硬盘先接好；仍不行用 Steam 的「验证游戏文件完整性」。',
+  },
+  userDir: {
+    causes: '游戏从未启动过（首次启动才会生成该目录）；「文档」被 OneDrive 重定向；目录权限不足或被杀软拦截。',
+    fixes: '先启动游戏到主菜单再退出；点「浏览」选到 文档\\Paradox Interactive\\游戏名 这一层；不要把上一级目录填进来。',
+  },
+  workshopDir: {
+    causes: '游戏装在非默认 Steam 库；没有订阅模组，或 Steam 还没下载完；Steam 未登录 / 离线；工坊缓存被清理。',
+    fixes: '确认订阅并在 Steam 里等下载完成；点「浏览」选到 steamapps\\workshop\\content\\游戏ID；有多个 Steam 库时选游戏所在的那个库。',
+  },
+};
+
+function pathIssueMessage(issues) {
+  return (issues || []).map((it, i) => {
+    const tip = PATH_TIPS[it.field] || {};
+    const state = it.kind === 'missing' ? '未探测到' : `路径不存在：${it.path}`;
+    return `${i + 1}. 【${it.label}】${state}\n可能原因：${tip.causes || '未知'}\n解决办法：${tip.fixes || '请在设置里手动指定路径'}`;
+  }).join('\n\n');
+}
+
+function pathIssueDialog(issues) {
+  if (!issues || !issues.length) return Promise.resolve(false);
+  return ui.alert(pathIssueMessage(issues), { title: '路径未找到 · 请检查', okText: '知道了' });
+}
+
 function saveState(text, persist) {
   const el = $('#saveState');
   el.textContent = text;
@@ -234,6 +264,12 @@ async function boot() {
   bindGameSwitcher();
   window.addEventListener('hashchange', route);
   route();
+
+  // 路径探测失败或目录不存在：启动时弹一次，写明原因和解决办法
+  if ((S.state.pathIssues || []).length && !S.pathNoticeShown) {
+    S.pathNoticeShown = true;
+    setTimeout(() => pathIssueDialog(S.state.pathIssues), 900);
+  }
 
   // 后台加载 mod 索引
   saveState(T('home.scanning'), true);
@@ -303,6 +339,7 @@ function paintTop() {
           paintTop();
           render();                 // 立刻重绘当前页面，不用再切侧边栏
           toast(T('top.switched', { name: gameLabel((r.state.gameDefs || {})[key]) || key }), 'ok');
+          if ((r.state.pathIssues || []).length) pathIssueDialog(r.state.pathIssues);
         }
       } catch (e) {
         toast('切换失败：' + e.message, 'err');
@@ -4857,15 +4894,30 @@ async function renderSettings() {
     // 游戏版本：留空则自动跟随检测到的真实版本，避免兼容性误判
     const gv = $('#cVer').value.trim();
     const realVer = st.version || '';
-    await post('/api/config', {
-      gameRoot: $('#cGame').value, userDir: $('#cUser').value,
-      workshopDir: $('#cWork').value, gameVersion: gv || realVer,
-    });
+    let r;
+    try {
+      r = await post('/api/config', {
+        gameRoot: $('#cGame').value, userDir: $('#cUser').value,
+        workshopDir: $('#cWork').value, gameVersion: gv || realVer,
+      });
+    } catch (e) {
+      toast('保存失败：无法写入配置文件', 'err');
+      return;
+    }
+    if (!r || r.ok === false) {
+      toast('保存失败：' + ((r && r.error) || '未知错误'), 'err');
+      return;
+    }
     await refreshState();
     const d = await api('/api/mods?force=1');
     S.mods = d.items || [];
     S.modByKey = new Map(S.mods.map(m => [m.modFile.toLowerCase(), m]));
-    toast(`设置已保存 · 识别到 ${S.mods.length} 个模组`, 'ok');
+    if (r.pathIssues && r.pathIssues.length) {
+      toast('设置已保存，但路径有问题', 'err');
+      pathIssueDialog(r.pathIssues);
+    } else {
+      toast(`设置已保存 · 识别到 ${S.mods.length} 个模组`, 'ok');
+    }
     renderSettings();
   };
 
@@ -4891,9 +4943,17 @@ async function renderSettings() {
   };
   $('#cCheckUpd').onclick = checkUpdate;
   $('#cReload').onclick = async () => {
-    await post('/api/config', { gameRoot: '', userDir: '', workshopDir: '' });
+    const r = await post('/api/config', { resetPaths: true });
+    if (!r || r.ok === false) {
+      toast('重新探测失败：' + ((r && r.error) || '未知错误'), 'err');
+      return;
+    }
     await refreshState(); renderSettings();
-    toast('已重新探测路径', 'ok');
+    if ((S.state.pathIssues || []).length) {
+      pathIssueDialog(S.state.pathIssues);
+    } else {
+      toast('已重新探测路径', 'ok');
+    }
   };
   $('#cRescan').onclick = async () => {
     saveState('重新扫描中…', true);
