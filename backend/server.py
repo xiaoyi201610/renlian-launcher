@@ -95,6 +95,44 @@ def api_consistency() -> dict:
         return {"ok": True, "psid": None, "extra": [], "missing": [], "orderDiff": False}
     id2f = core._mod_id_to_file_map(db)
     CTX.mods()
+    if CTX.game == "vic3":
+        # Vic3 的 content_load.json 存的是 mod 绝对目录，不是 mod/xxx.mod
+        recs = {os.path.normcase(os.path.abspath(r["dirPath"])): r
+                for r in db.mod_records() if (r.get("dirPath") or "").strip()}
+        want, seen = [], set()
+        for m in ps["mods"]:
+            if not m["enabled"]:
+                continue
+            for cand in ((m.get("dirPath") or "").strip(),
+                         (m.get("archivePath") or "").strip()):
+                if not cand:
+                    continue
+                p = os.path.abspath(cand)
+                k = os.path.normcase(p)
+                if k in seen:
+                    continue
+                seen.add(k)
+                want.append(p)
+                break
+        have = db.read_dlc_load().get("enabled_mods") or []
+        want_norm = {os.path.normcase(x) for x in want}
+        have_norm = {os.path.normcase(x) for x in have}
+
+        def vlabel(p):
+            rec = recs.get(os.path.normcase(os.path.abspath(p))) or {}
+            return {"file": p,
+                    "name": rec.get("displayName") or rec.get("name") or os.path.basename(p),
+                    "steamId": str(rec.get("steamId") or "")}
+
+        extra = [vlabel(x) for x in have if os.path.normcase(x) not in want_norm]
+        missing = [vlabel(x) for x in want if os.path.normcase(x) not in have_norm]
+        order_diff = (not extra and not missing
+                      and [os.path.normcase(x) for x in want] != [os.path.normcase(x) for x in have])
+        return {
+            "ok": True, "psid": psid, "playsetName": ps["name"], "mode": "content_load",
+            "extra": extra, "missing": missing, "orderDiff": order_diff,
+            "wantCount": len(want), "haveCount": len(have),
+        }
     want, seen = [], set()
     for m in ps["mods"]:
         if not m["enabled"]:
@@ -352,6 +390,14 @@ def api_save_playset(payload: dict) -> dict:
         except Exception:
             pass
 
+    # 没有激活播放集时（常见于官方启动器留下的 isActive=0），把本次保存的
+    # 播放集设为激活，否则 write_playset 不会同步到游戏读取的启停清单，
+    # 玩家看到的开关状态会「保存了但游戏不生效」。
+    if not db.active_playset():
+        try:
+            db.set_active(psid)
+        except Exception:
+            pass
     try:
         res = db.write_playset(psid, write_items, payload.get("dlcs"))
     except Exception as ex:
@@ -641,6 +687,10 @@ def _dlc_base(game: str, force: bool = False) -> tuple[dict, bool]:
 def api_dlcs(psid: str | None, force: bool = False, pull_steam: bool = False) -> dict:
     db = CTX.db()
     target = psid or db.active_playset()
+    if not target:
+        # 没有激活播放集时按前端默认显示的列表第一个读取状态，保证展示与保存目标一致
+        _ps = db.list_playsets()
+        target = _ps[0]["id"] if _ps else None
     state = db.dlc_enabled_map(target)
     dl = db.read_dlc_load()
     disabled = set(dl.get("disabled_dlcs") or [])
@@ -798,11 +848,20 @@ def _rec_of(mod_file: str) -> dict:
 
 
 def api_set_dlcs(payload: dict) -> dict:
-    psid = payload.get("playsetId") or CTX.db().active_playset()
-    mapping = payload.get("dlcs") or {}
     db = CTX.db()
+    psid = payload.get("playsetId") or db.active_playset()
+    if not psid:
+        _ps = db.list_playsets()
+        psid = _ps[0]["id"] if _ps else None
+    mapping = payload.get("dlcs") or {}
     if not psid:
         return {"ok": False, "error": "没有激活的播放集"}
+    # 没有激活播放集时先激活，否则 DLC 设置只写进播放集、不落到游戏读取的清单
+    if not db.active_playset():
+        try:
+            db.set_active(psid)
+        except Exception:
+            pass
     CTX.mods()
     cur = api_playset_detail(psid)
     if not cur.get("ok"):
@@ -815,22 +874,162 @@ def api_set_dlcs(payload: dict) -> dict:
         items.append({"modId": i["modId"], "enabled": i["enabled"], "rec": None})
     res = db.write_playset(psid, items, merged)
 
+    if CTX.game == "vic3":
+        # Vic3 的 DLC 开关走 content_load.json 的 disabledDLC，
+        # 不改 .dlc 扩展名（那是 CK3 等旧引擎的做法）。
+        return {
+            "ok": True,
+            "synced": bool(res.get("synced")),
+            "dlcs": merged,
+            "mode": "content_load",
+            "dlcFilesChanged": 0,
+            "dlcFilesFailed": 0,
+            "failed": [],
+        }
+
     # 真正禁用/启用：改游戏目录里对应 .dlc 文件的扩展名
     # （disabled_dlcs 字段在 1.20 已失效，引擎靠扫描 .dlc 文件发现 DLC）
     game_root = CTX.cfg.get("gameRoot") or ""
+    game = CTX.game
     pops_to_dir = {}
     for d in core.list_dlcs(CTX.cfg):
-        pops_to_dir[d["popsId"]] = d["dir"]
+        # 只处理本机已安装的 DLC；未安装的没有 .dlc 文件可改，不该报失败
+        if d.get("installed"):
+            pops_to_dir[d["popsId"]] = d["dir"]
     changed = []
     failed = []
     for pops, en in merged.items():
         d = pops_to_dir.get(pops)
         if not d:
             continue
-        ok = core.set_dlc_file_state(game_root, d, bool(en))
-        (changed if ok else failed).append(d)
+        r = core.apply_dlc_file_state(game_root, d, bool(en), game)
+        if r.get("ok"):
+            if r.get("changed"):
+                changed.append(d)
+        else:
+            failed.append({
+                "popsId": pops, "dir": d,
+                "reason": r.get("reason") or "未知原因",
+                "writable": bool(r.get("writable")),
+            })
     return {"ok": True, "synced": res.get("synced", False), "dlcs": merged,
-            "dlcFilesChanged": len(changed), "dlcFilesFailed": len(failed)}
+            "dlcFilesChanged": len(changed), "dlcFilesFailed": len(failed),
+            "failed": failed}
+
+
+def api_dlc_open_dir() -> dict:
+    """打开本地游戏 dlc 目录（资源管理器）。"""
+    root = core.dlc_root_dir(CTX.cfg.get("gameRoot") or "", CTX.game)
+    if not root or not os.path.isdir(root):
+        return {"ok": False, "error": "找不到 DLC 目录，请先在设置里确认游戏安装路径"}
+    if not core.open_path(root):
+        return {"ok": False, "path": root, "error": "打开目录失败"}
+    return {"ok": True, "path": root}
+
+
+def api_dlc_verify(psid: str | None = None) -> dict:
+    """开关自检：对比播放集里的期望状态与 .dlc 文件的真实状态。"""
+    db = CTX.db()
+    target = psid or db.active_playset()
+    if not target:
+        _ps = db.list_playsets()
+        target = _ps[0]["id"] if _ps else None
+    if not target:
+        return {"ok": False, "error": "没有激活的播放集"}
+    desired_map = db.dlc_enabled_map(target) or {}
+    dl = db.read_dlc_load()
+    load_disabled = set(dl.get("disabled_dlcs") or [])
+    game_root = CTX.cfg.get("gameRoot") or ""
+    game = CTX.game
+
+    if game == "vic3":
+        # Vic3 不改 .dlc 文件，真实状态看 content_load.json 的 disabledDLC
+        items = []
+        mismatches = []
+        for d in core.list_dlcs(CTX.cfg):
+            if not d.get("installed"):
+                continue
+            pops = d["popsId"]
+            want = bool(desired_map[pops]) if pops in desired_map else (pops not in load_disabled)
+            actual_on = pops not in load_disabled
+            rec = {
+                "popsId": pops,
+                "dir": d["dir"],
+                "name": d.get("nameCn") or d.get("name") or d["dir"],
+                "desired": want,
+                "actual": actual_on,
+                "actualState": "enabled" if actual_on else "disabled",
+                "writable": True,
+                "conflict": False,
+                "reason": "",
+            }
+            if want != actual_on:
+                rec["reason"] = (
+                    "期望启用，但 content_load.json 的 disabledDLC 仍包含它（启用没有生效）"
+                    if want else
+                    "期望关闭，但 content_load.json 的 disabledDLC 里没有它（关闭没有生效）"
+                )
+                mismatches.append(rec)
+            items.append(rec)
+        return {
+            "ok": True,
+            "playset": target,
+            "mode": "content_load",
+            "checked": len(items),
+            "mismatched": len(mismatches),
+            "items": items,
+            "mismatches": mismatches,
+        }
+
+    items = []
+    mismatches = []
+    for d in core.list_dlcs(CTX.cfg):
+        if not d.get("installed"):
+            continue
+        pops = d["popsId"]
+        if pops in desired_map:
+            want = bool(desired_map[pops])
+        elif d.get("fileDisabled"):
+            want = False
+        else:
+            want = pops not in load_disabled
+
+        st = core.inspect_dlc_file_state(game_root, d["dir"], game)
+        actual_on = st.get("actual") == "enabled"
+        rec = {
+            "popsId": pops,
+            "dir": d["dir"],
+            "name": d.get("nameCn") or d.get("name") or d["dir"],
+            "desired": want,
+            "actual": actual_on,
+            "actualState": st.get("actual"),
+            "writable": bool(st.get("writable")),
+            "conflict": bool(st.get("conflict")),
+            "reason": st.get("reason") or "",
+        }
+        items.append(rec)
+
+        if st.get("actual") == "missing":
+            rec["reason"] = st.get("reason") or "DLC 目录里没有 .dlc 文件"
+            mismatches.append(rec)
+        elif st.get("conflict"):
+            rec["reason"] = "目录里同时存在 .dlc 和 .dlc.disabled 重复文件"
+            mismatches.append(rec)
+        elif want != actual_on:
+            if want:
+                rec["reason"] = "期望启用，但文件仍是 .dlc.disabled（启用没有生效）"
+            else:
+                rec["reason"] = "期望关闭，但文件仍是 .dlc（关闭没有生效）"
+            mismatches.append(rec)
+
+    return {
+        "ok": True,
+        "playset": target,
+        "checked": len(items),
+        "mismatched": len(mismatches),
+        "items": items,
+        "mismatches": mismatches,
+    }
 
 
 def api_saves() -> dict:
@@ -848,7 +1047,8 @@ def api_open_statistics() -> dict:
             "workshop": cfg.get("workshopDir"),
             "saves": os.path.join(cfg.get("userDir") or "", "save games"),
             "logs": os.path.join(cfg.get("userDir") or "", "logs"),
-            "dlcLoad": os.path.join(cfg.get("userDir") or "", "dlc_load.json"),
+            "dlcLoad": os.path.join(cfg.get("userDir") or "",
+                                    "content_load.json" if CTX.game == "vic3" else "dlc_load.json"),
             "sqlite": CTX.db().path,
             "gameData": os.path.join(cfg.get("gameRoot") or "", "game"),
             "common": os.path.join(cfg.get("gameRoot") or "", "game", "common"),
@@ -1292,6 +1492,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(api_import_playset(body)); return
             if p == "/api/dlcs/set":
                 self._json(api_set_dlcs(body)); return
+            if p == "/api/dlcs/open-dir":
+                self._json(api_dlc_open_dir()); return
+            if p == "/api/dlcs/verify":
+                self._json(api_dlc_verify(body.get("playsetId") or None)); return
             if p == "/api/saves/delete":
                 paths = body.get("paths") or []
                 done, denied = [], []

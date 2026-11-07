@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7.0.5';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.7.0.7';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -474,7 +474,7 @@ function bindNav() {
 
 /* ---------------- 百科（军队 / 文化 / 传统） ---------------- */
 const WIKI_SITE = 'https://ck3.paradoxwikis.com/';
-const WIKI_ST = { data: null, owners: null, tab: '', q: '', cat: '', area: '', tier: '', flag: '',
+const WIKI_ST = { data: null, owners: null, tab: '', q: '', cat: '', area: '', tier: '', flag: '', grp: '',
   open: '', force: false, sort: 'type' };
 const WK_LABEL = { damage: 'wiki.damage', toughness: 'wiki.toughness', pursuit: 'wiki.pursuit', screen: 'wiki.screen' };
 
@@ -596,7 +596,7 @@ async function renderWiki() {
   if (!tabs.some(t => t.id === WIKI_ST.tab)) {
     WIKI_ST.tab = tabs.length ? tabs[0].id : 'maa';
     WIKI_ST.cat = '';
-    WIKI_ST.area = ''; WIKI_ST.tier = ''; WIKI_ST.flag = '';
+    WIKI_ST.area = ''; WIKI_ST.tier = ''; WIKI_ST.flag = ''; WIKI_ST.grp = '';
   }
   paintWiki();
 }
@@ -637,6 +637,7 @@ function wikiItems() {
       if (!cat) { /* 未选子分类 */ }
       else if (x.catKey !== cat && (x.cats || []).indexOf(cat) < 0) return false;
       if (tid === 'tech' && WIKI_ST.area && x.areaKey !== WIKI_ST.area) return false;
+      if (tid === 'landunits' && WIKI_ST.grp && x.grpKey !== WIKI_ST.grp) return false;
       if (tid === 'tech') {
         if (WIKI_ST.tier !== '' && Number(x.tier) !== Number(WIKI_ST.tier)) return false;
         if (WIKI_ST.flag && !x[WIKI_ST.flag]) return false;
@@ -1096,7 +1097,7 @@ async function paintFocus(tabs) {
 function bindFxTabs() {
   $$('.wk-tab').forEach(b => b.onclick = () => {
     WIKI_ST.tab = b.dataset.tab; WIKI_ST.cat = ''; WIKI_ST.open = '';
-    WIKI_ST.area = ''; WIKI_ST.tier = ''; WIKI_ST.flag = '';
+    WIKI_ST.area = ''; WIKI_ST.tier = ''; WIKI_ST.flag = ''; WIKI_ST.grp = '';
     paintWiki();
   });
 }
@@ -1394,6 +1395,15 @@ function paintWiki() {
         `<button class="wk-cat wk-cat-sm ${WIKI_ST.flag === f.key ? 'active' : ''}" data-flag="${esc(f.key)}">
           ${esc(f.label)}<b>${f.n}</b></button>`).join('')}
     </div>` : '';
+  // 欧陆风云4 陆军单位：在兵种筛选下再按科技组分档
+  const isEu4Land = d.game === 'eu4' && WIKI_ST.tab === 'landunits'
+    && (d.unitGroups || []).length > 0;
+  const grpBar = isEu4Land ? `
+    <div class="wk-cats wk-grpbar">
+      ${[{ key: '', name: T('wiki.all'), n: null }].concat(d.unitGroups || []).map(g =>
+        `<button class="wk-cat wk-cat-sm ${WIKI_ST.grp === g.key ? 'active' : ''}" data-grp="${esc(g.key)}">
+          ${esc(g.name)}${g.n !== null ? `<b>${g.n}</b>` : ''}</button>`).join('')}
+    </div>` : '';
   // 群星传统：选中某棵树时显示这棵树的说明与 AI 权重（对应游戏里树界面左下角）
   const tree = (!isCk3 && WIKI_ST.tab === 'traditions' && WIKI_ST.cat)
     ? ((d.treeInfo || {})[WIKI_ST.cat] || null) : null;
@@ -1426,6 +1436,7 @@ function paintWiki() {
 
     ${layout === 'maa' ? wikiCycleCard() : ''}
     ${areaBar}
+    ${grpBar}
 
     <div class="wk-toolbar">
       <input class="inp wk-search" id="wkQ" value="${esc(WIKI_ST.q)}" placeholder="${esc(T('wiki.search'))}">
@@ -1452,7 +1463,7 @@ function paintWiki() {
 
   $$('.wk-tab').forEach(b => b.onclick = () => {
     WIKI_ST.tab = b.dataset.tab; WIKI_ST.cat = ''; WIKI_ST.area = ''; WIKI_ST.tier = '';
-    WIKI_ST.flag = ''; WIKI_ST.open = ''; paintWiki();
+    WIKI_ST.flag = ''; WIKI_ST.grp = ''; WIKI_ST.open = ''; paintWiki();
   });
   $$('.wk-cat').forEach(b => b.onclick = () => {
     if (b.dataset.cat === undefined) return;   // 领域/层级/标记按钮走各自的绑定
@@ -1467,6 +1478,9 @@ function paintWiki() {
   $$('[data-flag]').forEach(b => b.onclick = () => {
     WIKI_ST.flag = (WIKI_ST.flag === b.dataset.flag) ? '' : b.dataset.flag;
     WIKI_ST.open = ''; paintWiki();
+  });
+  $$('[data-grp]').forEach(b => b.onclick = () => {
+    WIKI_ST.grp = b.dataset.grp; WIKI_ST.open = ''; paintWiki();
   });
   const sel = $('#wkSel');
   if (sel) sel.onchange = () => { WIKI_ST.cat = sel.value; WIKI_ST.open = ''; paintWiki(); };
@@ -1643,7 +1657,28 @@ document.addEventListener('click', e => {
   if (a.startsWith('goto:')) location.hash = '#/' + a.slice(5);
 });
 
-/* 排序方式：A→Z / Z→A / 名称（中文按拼音） */
+/* 排序方式：自动 / A→Z / Z→A / 名称（中文按拼音）
+   自动排序按社区经验分层：数字越小越靠上（越早加载），越靠下优先级越高 */
+const AUTO_SORT_GROUPS = [
+  { w: 0, re: /(framework|library|lib|core|utils?|api|base|前置|框架|基础|核心库|依赖)/i },
+  { w: 1, re: /(overhaul|total[\s_-]*conversion|mega|整合|大型|重制|复兴|重构)/i },
+  { w: 3, re: /(compat(?:ibility)?|patch|hotfix|fix|兼容|补丁|修复|修正)/i },
+  { w: 4, re: /(translation|locali[sz]ation|l10n|chinese|汉化|翻译|本地化|简中|繁中)/i },
+];
+function autoSortWeight(m) {
+  const s = String((m && (m.name || m.modFile)) || '');
+  // 汉化/兼容补丁优先判定：名字里同时带 core 的汉化也应当排到最后
+  for (const i of [3, 2, 0, 1]) {
+    if (AUTO_SORT_GROUPS[i].re.test(s)) return AUTO_SORT_GROUPS[i].w;
+  }
+  return 2;
+}
+function autoSortCompare(a, b) {
+  const wa = autoSortWeight(a), wb = autoSortWeight(b);
+  if (wa !== wb) return wa - wb;
+  return String(a.name || a.modFile || '').localeCompare(String(b.name || b.modFile || ''), 'zh');
+}
+
 const SORT_MODES = {
   az: {
     label: '按 A → Z 排序',
@@ -1658,6 +1693,140 @@ const SORT_MODES = {
     cmp: (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh'),
   },
 };
+
+/* 每个游戏的覆盖规则与排序技巧（社区经验，仅供参考） */
+const GAME_SORT_RULES = {
+  ck3: {
+    effect: '排序有效',
+    rule: '按播放集顺序从上到下加载，越靠下越晚加载；同名文件由靠下的模组覆盖靠上的。引擎直接使用启动器写入的顺序。',
+    tips: '框架/前置和大型改模放上面，兼容补丁、汉化放最下面（后加载才能覆盖）。新增 mod 后进游戏确认一次加载顺序。',
+  },
+  stellaris: {
+    effect: '排序有效',
+    rule: '与 CK3 相同：按播放集顺序加载，靠下的后加载并覆盖靠上的同名文件。',
+    tips: '大型 overhaul / 框架置顶，补丁与汉化置底；多个改同一文件的小 mod 只保留一个或明确先后。',
+  },
+  hoi4: {
+    effect: '排序有效',
+    rule: '播放集顺序就是加载顺序，越靠下越晚加载、同名文件覆盖靠上。',
+    tips: '前置框架置顶，兼容补丁/汉化置底；国策、地图类大型 mod 互相冲突时不要同时启用。',
+  },
+  vic3: {
+    effect: '只能部分生效',
+    rule: '播放集顺序只对「同名文件」生效：靠下的后加载并覆盖靠上；不同文件名的解析还受文件名字母顺序影响，可能优先于播放集位置。',
+    tips: '汉化/兼容补丁放最下面并保持原文件名；进游戏发现覆盖不对时，先排查不同文件名的冲突，而不是继续拖顺序。',
+  },
+  eu4: {
+    effect: '排序不改变覆盖',
+    rule: '启动器/播放集顺序不参与实际覆盖判定；引擎按 .mod 描述文件里的 name 字段排序（社区实测覆盖方向存在分歧）。排序只整理列表。',
+    tips: '想真正控制覆盖只能改 .mod 的 name，或只启用一个会冲突的 mod；不要指望拖顺序能解决覆盖问题。',
+  },
+  eu5: {
+    effect: '基本有效，需实测',
+    rule: '新一代引擎，播放集顺序对同名文件生效，但不同文件名的解析可能受文件名排序影响。',
+    tips: '先按推荐顺序排，再进游戏验证；覆盖异常时优先检查文件名冲突。',
+  },
+  ck2: {
+    effect: '排序有效',
+    rule: '由用户目录 settings.txt 的 last_mods 顺序决定，越靠后越晚加载并覆盖靠前；启动器会把播放集顺序写进去。',
+    tips: '大型 mod 在前，小补丁和汉化在后；改完顺序后确认 settings.txt 已更新。',
+  },
+  imperator: {
+    effect: '排序有效',
+    rule: '与 HOI4/CK3 同属 Clausewitz 系，按播放集顺序加载，靠下覆盖靠上。',
+    tips: '大型 overhaul 与轻量补丁分层摆放，补丁和汉化放最下面。',
+  },
+  skylines: {
+    effect: '排序无效果',
+    rule: '没有加载顺序概念，所有模组同时加载；排序只影响列表展示，不影响游戏。',
+    tips: '冲突只能靠模组本身的兼容性判断，排序无意义。',
+  },
+  skylines2: {
+    effect: '排序无效果',
+    rule: '同样没有传统加载顺序，模组并行加载；排序仅用于整理列表。',
+    tips: '关注作者标注的兼容版本，排序不解决冲突。',
+  },
+};
+const GAME_SORT_ORDER = ['ck3', 'stellaris', 'hoi4', 'vic3', 'eu4', 'eu5', 'ck2', 'imperator', 'skylines', 'skylines2'];
+
+function gameSortRule(key) {
+  return GAME_SORT_RULES[key] || {
+    effect: '未知',
+    rule: '该游戏暂无已知的加载顺序规则，请以游戏内实际表现为准。',
+    tips: '建议只启用确认兼容的模组，并在游戏内验证。',
+  };
+}
+
+/* 自动排序前的说明弹窗：写清覆盖规则、技巧与「仅供参考」 */
+function openAutoSortDialog() {
+  return new Promise(resolve => {
+    const cur = S.state.currentGame || 'ck3';
+    const curName = gameLabel((S.state.gameDefs || {})[cur]) || (GAME_SORT_RULES[cur] ? cur : cur);
+    const curRule = gameSortRule(cur);
+    const rows = GAME_SORT_ORDER.map(k => {
+      const def = (S.state.gameDefs || {})[k] || {};
+      const nm = gameLabel(def) || k;
+      const r = gameSortRule(k);
+      return `<div class="sr-row${k === cur ? ' cur' : ''}">
+        <div><span class="sr-name">${esc(nm)}</span><span class="sr-tag">${esc(r.effect)}</span></div>
+        <div><b>覆盖：</b>${esc(r.rule)}</div>
+        <div><b>技巧：</b>${esc(r.tips)}</div>
+      </div>`;
+    }).join('');
+
+    const prevFocus = document.activeElement;
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask';
+    mask.innerHTML = `
+      <div class="modal conflict-panel">
+        <div class="modal-head">自动排序 · ${esc(curName)}</div>
+        <div class="modal-body sort-rule">
+          <div class="cf-notice">⚠ 自动排序是按社区经验整理的推荐顺序，仅供参考，不保证游戏内一定按此覆盖。</div>
+          <div class="cf-summary">
+            <b>分层规则：</b>前置/框架/库 → 大型改模 → 普通模组 → 兼容补丁 → 汉化/翻译；同层再按名称排序（中文按拼音）。<br>
+            <b>识别方式：</b>按模组名称关键词分组，未命中的一律按普通模组处理。<br>
+            <b>注意：</b>重排只调整当前播放集，会覆盖现有顺序，且无法一键还原。
+          </div>
+          <div class="cf-sec">
+            <div class="cf-sec-t">当前游戏：${esc(curName)} <span class="cf-hint">${esc(curRule.effect)}</span></div>
+            <div class="sr-row cur">
+              <div><b>覆盖规则：</b>${esc(curRule.rule)}</div>
+              <div><b>技巧：</b>${esc(curRule.tips)}</div>
+            </div>
+          </div>
+          <div class="cf-sec">
+            <div class="cf-sec-t">各游戏覆盖规则与技巧 <span class="cf-hint">当前游戏高亮</span></div>
+            ${rows}
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn ghost" data-m="cancel">取消</button>
+          <button class="btn primary" data-m="ok">按推荐顺序重排</button>
+        </div>
+      </div>`;
+    document.body.appendChild(mask);
+    requestAnimationFrame(() => mask.classList.add('show'));
+
+    const finish = (val) => {
+      mask.classList.remove('show');
+      document.removeEventListener('keydown', onKey, true);
+      setTimeout(() => {
+        mask.remove();
+        if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch (e) {} }
+        resolve(val);
+      }, 130);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+    };
+    mask.querySelector('[data-m="ok"]').onclick = () => finish(true);
+    mask.querySelector('[data-m="cancel"]').onclick = () => finish(false);
+    mask.addEventListener('mousedown', e => {
+      if (e.target === mask) finish(false);
+    });
+    document.addEventListener('keydown', onKey, true);
+  });
+}
 
 function openSortMenu(anchorEl) {
   document.querySelectorAll('.mod-menu').forEach(x => x.remove());
@@ -1703,6 +1872,17 @@ async function applySortMode(mode) {
   toast(TT('已') + TT(m.label), 'ok');
 }
 
+/* 自动排序：先弹窗说明各游戏覆盖规则与技巧，确认后按推荐分层重排 */
+async function applyAutoSort() {
+  if (S.play.length < 2) { toast(TT('当前播放集里没有可排序的模组'), 'err'); return; }
+  const ok = await openAutoSortDialog();
+  if (!ok) return;
+  S.play.sort(autoSortCompare);
+  paintLists();
+  scheduleSave();
+  toast(TT('已按推荐规则重排，请进游戏验证生效情况'), 'ok');
+}
+
 /* ---------------- MOD 管理（核心） ---------------- */
 async function renderMods() {
   const st = S.state;
@@ -1734,6 +1914,7 @@ async function renderMods() {
         <button class="btn sm ghost" id="mAllOff">全部禁用</button>
         <button class="btn sm ghost" id="mRev">反转顺序</button>
         <button class="btn sm ghost" id="mConflicts" title="检查当前播放集里启用的模组之间有无文件/本地化/依赖冲突">${TT('冲突排查')}</button>
+        <button class="btn sm ghost" id="mAutoSort" title="按游戏推荐规则自动重排当前播放集（先说明覆盖规则与技巧，仅供参考）">自动排序</button>
         <button class="btn sm ghost" id="mExport" title="把当前播放集导出为 JSON 文件">导出播放集</button>
         <button class="btn sm ghost" id="mImportPs" title="从 JSON 文件导入播放集，本地缺失的工坊模组会自动订阅">导入播放集</button>
         <button class="btn sm ghost" id="mImportZip" title="选择压缩包安装本地 Mod（也可以直接把压缩包拖进窗口）">导入 Mod</button>
@@ -1816,6 +1997,7 @@ async function renderMods() {
   $('#sortMenu').onclick = e => { e.stopPropagation(); openSortMenu(e.currentTarget); };
   $('#mRev').onclick = () => { S.play.reverse(); paintLists(); scheduleSave(); };
   $('#mConflicts').onclick = openConflictModal;
+  $('#mAutoSort').onclick = applyAutoSort;
   $('#mAllOn').onclick = () => { S.play.forEach(x => x.enabled = true); paintLists(); scheduleSave(); };
   $('#mAllOff').onclick = () => { S.play.forEach(x => x.enabled = false); paintLists(); scheduleSave(); };
 
@@ -2661,7 +2843,7 @@ async function savePlayset() {
       items: S.play.map(x => ({ modId: x.modId || null, modFile: x.modFile, enabled: x.enabled })),
     });
     if (!r.ok) { toast(r.error || '保存失败', 'err'); saveState('保存失败', false); return; }
-    saveState(`已保存 ${r.saved} 个模组${r.synced ? ' · 已同步到游戏' : ''}`);
+    saveState(`已保存 ${r.saved} 个模组${r.synced ? ' · 已同步到游戏' : ' · 未写入游戏（播放集未激活）'}`);
     refreshStateQuiet();
     // 新加入的条目拿回真实 modId，避免下次保存重复创建记录
     if (S.play.some(x => !x.modId)) {
@@ -3024,11 +3206,68 @@ function renderPlaysets() {
 }
 
 /* ---------------- DLC ---------------- */
+// 开关自检结果面板：逐个列出「期望状态 vs 文件实际状态」不一致的 DLC
+function showDlcVerify(r, quiet) {
+  const el = $('#dlcVerify');
+  if (!el) return;
+  if (!r || r.ok === false) {
+    el.innerHTML = `<div class="patch-card patch-warn"><span class="patch-dot"></span>
+      <div class="patch-tx"><b>开关自检失败</b><small>${esc((r && r.error) || '未知错误')}</small></div></div>`;
+    if (!quiet) toast((r && r.error) || '开关自检失败', 'err');
+    return;
+  }
+  if (!r.mismatched) {
+    el.innerHTML = `<div class="patch-card patch-none"><span class="patch-dot"></span>
+      <div class="patch-tx"><b>开关自检通过</b><small>检查了 ${r.checked} 个已安装 DLC，实际开关状态与播放集设置完全一致。</small></div></div>`;
+    if (!quiet) toast(`自检通过：${r.checked} 个 DLC 开关均已生效`, 'ok');
+    return;
+  }
+  const list = (r.mismatches || []).slice(0, 30).map((m) => `
+    <div style="padding:5px 0;border-top:1px solid rgba(255,255,255,.07)">
+      <div style="color:var(--fg)">${esc(m.name)} <span style="color:var(--dim-2);font-size:10px">${esc(m.dir)}</span></div>
+      <div style="color:#ff9a94">期望${m.desired ? '启用' : '关闭'} · 实际${m.actual ? '启用' : '关闭'} · ${esc(m.reason || '')}</div>
+    </div>`).join('');
+  el.innerHTML = `<div class="patch-card patch-warn" style="align-items:flex-start">
+    <span class="patch-dot"></span>
+    <div class="patch-tx"><b>自检未通过：${r.mismatched} / ${r.checked} 个 DLC 的开关没有生效</b>
+      <small>常见原因：游戏或官方启动器仍在运行（文件被占用）、游戏目录没有写权限，或目录里同时存在 .dlc 和 .dlc.disabled 重复文件。</small>
+      <div style="margin-top:8px;max-height:220px;overflow:auto;font-size:11px;line-height:1.6">${list}</div>
+      ${r.mismatches.length > 30 ? `<small>仅显示前 30 个，共 ${r.mismatches.length} 个。</small>` : ''}
+    </div>
+    <button class="btn sm ghost" id="dFix">按期望状态修复</button>
+  </div>`;
+  if (!quiet) toast(`自检发现 ${r.mismatched} 个 DLC 开关未生效`, 'err');
+  const fx = el.querySelector('#dFix');
+  if (fx) fx.onclick = async () => {
+    fx.disabled = true;
+    const map = {};
+    (r.items || []).forEach((x) => { map[x.popsId] = x.desired; });
+    try {
+      const rr = await post('/api/dlcs/set', { dlcs: map });
+      if (rr.ok && !rr.dlcFilesFailed) {
+        toast('已按期望状态重新写入，正在复查…', 'ok');
+      } else if (rr.ok) {
+        toast(`修复完成，但仍有 ${rr.dlcFilesFailed} 个没能改动：${(rr.failed && rr.failed[0] && rr.failed[0].reason) || '未知原因'}`, 'err');
+      } else {
+        toast(rr.error || '修复失败', 'err');
+      }
+      const r2 = await post('/api/dlcs/verify', {});
+      showDlcVerify(r2);
+      render();
+    } catch (err) {
+      toast('修复失败：' + err.message, 'err');
+      fx.disabled = false;
+    }
+  };
+}
+
 async function renderDlc() {
   $('#view').innerHTML = `<div class="page-head"><div><div class="page-title">DLC 管理</div>
     <div class="page-sub">DLC 清单、封面、介绍和「是否已购买」的判定结果，<b>校验一次就会存到本地</b>，
       之后打开都直接读本地、不再问 Steam。想重新核对（比如刚在 Steam 买了新 DLC），点「重新校验」。</div></div>
     <div class="bar">
+    <button class="btn sm ghost" id="dOpenDir" title="在资源管理器里打开本机 DLC 文件目录">打开 DLC 目录</button>
+    <button class="btn sm ghost" id="dVerify" title="逐个检查 DLC 的实际开关是否与播放集设置一致">开关自检</button>
     <button class="btn sm ghost" id="dOn">全部开启</button>
     <button class="btn sm ghost" id="dOff">全部关闭</button>
     <button class="btn sm ghost" id="dRecheck" title="重新扫描本地 DLC 文件，并重新向 Steam 核对是否已购买">重新校验</button>
@@ -3037,6 +3276,7 @@ async function renderDlc() {
     <div class="dlc-statbar" id="dlcStat"></div>
     <div id="dlcPatch"></div>
     <div id="dlcNote"></div>
+    <div id="dlcVerify"></div>
     <div id="dlcFilter"></div>
     <div id="dlcWrap"><div class="empty"><div class="big">◆</div>读取中…</div></div>`;
 
@@ -3290,6 +3530,31 @@ async function renderDlc() {
   };
   $('#dStore').onclick = () => post('/api/url', { url: S.state.browserDlcUrl });
 
+  // 打开本机 dlc 目录（资源管理器）
+  $('#dOpenDir').onclick = async () => {
+    const r = await post('/api/dlcs/open-dir', {});
+    if (!r.ok) toast(r.error || '打开 DLC 目录失败', 'err');
+    else if (!r.error) toast('已在资源管理器中打开 DLC 目录', 'ok');
+  };
+
+  // 开关自检：逐个对比「设置里的期望开关」与「.dlc 文件真实状态」
+  $('#dVerify').onclick = async (e) => {
+    const b = e.currentTarget;
+    if (b.disabled) return;
+    b.disabled = true;
+    const old = b.textContent;
+    b.textContent = '自检中…';
+    try {
+      const r = await post('/api/dlcs/verify', {});
+      showDlcVerify(r);
+    } catch (err) {
+      toast('开关自检失败：' + err.message, 'err');
+    }
+    b.disabled = false;
+    b.textContent = old;
+  };
+
+
   // 打开本地 DLC 中文名对照表（不存在会自动生成带示例的模板）
   $('#dNames').onclick = async () => {
     const r = await post('/api/dlc/names-file', {});
@@ -3429,6 +3694,17 @@ function saveDlc(items) {
       saveState(r.ok ? '已保存 DLC 设置' : (r.error || '保存失败'));
       if (!r.ok) {
         toast(r.error || '保存失败', 'err');
+      } else if (r.dlcFilesFailed) {
+        // 设置已写进播放集，但有 DLC 的 .dlc 文件没能改名 → 明确提示原因并自动自检
+        const first = (r.failed && r.failed[0]) || {};
+        toast(`设置已保存，但有 ${r.dlcFilesFailed} 个 DLC 的开关没能生效：${first.reason || '未知原因'}（已自动运行开关自检）`, 'err');
+        try {
+          const v = await post('/api/dlcs/verify', {});
+          showDlcVerify(v, true);
+        } catch (e) {}
+      } else if (r.synced === false) {
+        // 设置只写进了播放集，没有落到游戏读取的启停清单（多为播放集未激活）
+        toast('设置已保存，但当前播放集未激活，未写入游戏文件', 'err');
       } else {
         toast('已保存，游戏内 DLC 开关已同步', 'ok');
       }

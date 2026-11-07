@@ -16,7 +16,7 @@ try:
 except Exception:
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-EU4_VER = 6
+EU4_VER = 8
 _LOCK = threading.RLock()
 _MEM = {}
 _TREES = {}
@@ -58,6 +58,23 @@ TYPE_EN = {
     "transport": "Transport", "frigate": "Frigate",
 }
 
+# 汉化 mod 文本的标记字节（文件里是真实的控制字符）
+_LOC_MARK = ("\x10", "\x11", "\x12", "\x13")
+
+# 招募成本：陆地 (金币 defines 键, 人力 defines 键)；海军 (金币键, 水手键)
+UNIT_COST = {
+    "infantry": ("INFANTRY_COST", "INF_REGIMENT_MANPOWER_COST"),
+    "cavalry": ("CAVALRY_COST", "CAV_REGIMENT_MANPOWER_COST"),
+    "artillery": ("ARTILLERY_COST", "ART_REGIMENT_MANPOWER_COST"),
+}
+SHIP_COST = {
+    "heavy_ship": ("HEAVY_SHIP_COST", "HEAVY_SHIP_SAILORS_COST"),
+    "light_ship": ("LIGHT_SHIP_COST", "LIGHT_SHIP_SAILORS_COST"),
+    "galley": ("GALLEY_COST", "GALLEY_SHIP_SAILORS_COST"),
+    "transport": ("TRANSPORT_COST", "TRANSPORT_SHIP_SAILORS_COST"),
+    "frigate": ("LIGHT_SHIP_COST", "LIGHT_SHIP_SAILORS_COST"),
+}
+
 GROUP_CN = {
     "western": "西方", "eastern": "东方", "ottoman": "奥斯曼", "muslim": "穆斯林",
     "indian": "印度", "chinese": "中华", "nomad": "游牧", "african": "非洲",
@@ -65,6 +82,8 @@ GROUP_CN = {
     "sub_saharan": "撒哈拉以南",
     "mesoamerican": "中美", "north_american": "北美", "south_american": "南美",
     "high_american": "中美高地", "central_american": "中美",
+    "nomad_group": "游牧", "polynesian": "波利尼西亚",
+    "_universal": "通用（火炮）",
 }
 
 CAT_CN = {
@@ -422,6 +441,35 @@ def _num(v):
     return ("%+.2f" % f).rstrip("0").rstrip(".")
 
 
+def _cost(v):
+    """成本数字转无符号字符串（10.0 → 10，0.5 → 0.5），无效返回 —。"""
+    try:
+        f = float(v)
+    except Exception:
+        return "—"
+    if abs(f - round(f)) < 1e-9:
+        return "%d" % int(round(f))
+    return ("%.2f" % f).rstrip("0").rstrip(".")
+
+
+def _defines(root):
+    """读 common/defines.lua 里的数值键（成本用）。"""
+    out = {}
+    path = os.path.join(root, "common", "defines.lua")
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
+            for line in f:
+                m = re.match(r'^\s*([A-Za-z0-9_]+)\s*=\s*([-+]?[0-9.]+)', line)
+                if m:
+                    try:
+                        out[m.group(1)] = float(m.group(2))
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+    return out
+
+
 def _is_yes(v):
     return str(v).strip().lower() in ("yes", "true")
 
@@ -450,10 +498,98 @@ def _mod_value(key, v, zh=True):
     return _num(f)
 
 
+CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _has_cjk(s):
+    return bool(CJK_RE.search(s or ""))
+
+
+def _norm_mod(s):
+    s = (s or "").lower()
+    s = s.replace("modifer", "modifier").replace("recieved", "received")
+    s = s.replace("manuever", "maneuver")
+    s = re.sub(r"[^0-9a-z%+\-]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+# 汉化 mod 没有覆盖的修正/条件名词，按英文文案兜底
+MOD_EN_CN = {
+    "leader land maneuver": "陆军将领机动",
+    "leader naval maneuver": "海军将领机动",
+    "light ship cost": "轻型战舰花费",
+    "heavy ship cost": "重型战舰花费",
+    "sailor maintenance modifier": "水手维护费",
+    "global colonial growth": "全球殖民增长",
+    "global sailors modifier": "全局水手修正",
+    "trade range modifier": "贸易范围修正",
+    "global regiment recruit speed": "全局陆军招募速度",
+    "movement speed in fleet modifier": "舰队移动速度修正",
+    "global spy defence": "全局间谍防御",
+    "range": "射程",
+    "global ship recruit speed": "全球船只招募速度",
+    "sailors recovery speed": "水手恢复速度",
+    "landing penalty": "登陆惩罚",
+    "loyalty change on revoked": "撤销时忠诚变化",
+    "global tariffs": "全局关税",
+    "reinforce cost modifier": "补充成本修正",
+    "shock damage received": "所受冲击伤害",
+    "yearly religion organization": "年度宗教组织度",
+    "merc leader army tradition": "雇佣兵将领陆军传统",
+    "global prosperity growth": "全球繁荣度增长",
+    "state governing cost": "州治理成本",
+    "justify trade conflict cost": "制造贸易冲突花费",
+    "inward perfection": "内圣之道",
+    "fire damage received": "所受火力伤害",
+    "morale damage received": "所受士气打击",
+    "regiment disembark speed": "军团登陆速度",
+    "imperial mandate": "天命",
+    "num of trade companies": "贸易公司数量",
+    "num accepted cultures": "已接受文化数",
+    "num of owned and controlled institutions": "拥有并控制的思潮数",
+}
+
+# 英文词条 → 汉化词条（键名拼写常有出入，靠文案反查补漏）
+_EN_CN = {}
+
+
+def _build_en_cn(en_loc, loc):
+    rev = {}
+    for k, v in en_loc.items():
+        z = loc.get(k)
+        if not z or z == v or not v or len(v) > 60:
+            continue
+        nk = _norm_mod(v)
+        if nk and nk not in rev:
+            rev[nk] = z
+    return rev
+
+
 def _mod_label(key, loc, zh=True):
     if zh and key in MOD_CN:
         return MOD_CN[key]
-    return loc.get(key) or _pretty(key)
+    v = ""
+    for k in (key, "MODIFIER_" + key.upper(), key.upper()):
+        t = loc.get(k)
+        if not t:
+            continue
+        if not zh:
+            return t
+        if _has_cjk(t):
+            return t
+        if not v:
+            v = t
+    if zh:
+        for src in (v, _pretty(key)):
+            if not src:
+                continue
+            nm = _norm_mod(src)
+            t = MOD_EN_CN.get(nm) or _EN_CN.get(nm)
+            if not t and nm.endswith(" modifier"):
+                t = _EN_CN.get(nm[:-len(" modifier")])
+            if t:
+                return t
+    return v or _pretty(key)
 
 
 def _mod_lines(body, loc, zh=True, limit=0):
@@ -532,6 +668,9 @@ def _trigger_lines(body, loc, zh=True, limit=0):
             out.append(fmt.format(val))
         elif re.match(r"^[+-]?\d+(\.\d+)?$", str(v)):
             label = MOD_CN.get(k) if zh else None
+            if zh and not label:
+                nm = _norm_mod(_pretty(k))
+                label = MOD_EN_CN.get(nm) or _EN_CN.get(nm)
             out.append("%s：%s" % (label or _pretty(k), v))
         if limit and len(out) >= limit:
             break
@@ -714,6 +853,140 @@ def _loc_dir(root, lang):
     return loc, "english"
 
 
+# ------------------------------------------------ 民间汉化 mod（双字节本地化）
+
+def _loc_byte(ch):
+    """把文件里的 cp1252 字符还原成原始字节。"""
+    o = ord(ch)
+    if o < 0x100:
+        return o
+    try:
+        b = ch.encode("cp1252")
+    except Exception:
+        return None
+    return b[0] if len(b) == 1 else None
+
+
+def _decode_loc(s):
+    """汉化 mod 文本：标记字节 + 低字节 + 高字节 → Unicode 码位。"""
+    out = []
+    i, n = 0, len(s or "")
+    while i < n:
+        c = s[i]
+        if c in _LOC_MARK and i + 2 < n:
+            b1, b2 = _loc_byte(s[i + 1]), _loc_byte(s[i + 2])
+            if b1 is not None and b2 is not None:
+                m = ord(c)
+                if m == 0x11:
+                    b1 = (b1 - 0x0E) & 0xFF
+                elif m == 0x12:
+                    b2 = (b2 + 0x09) & 0xFF
+                elif m == 0x13:
+                    # 低字节 + 高字节都做过偏移（原文形如“□DV”乱码的根因）
+                    b1 = (b1 - 0x0E) & 0xFF
+                    b2 = (b2 + 0x09) & 0xFF
+                cp = b1 | (b2 << 8)
+                if 0x20 <= cp <= 0x2FFFF and not (0xD800 <= cp <= 0xDFFF):
+                    out.append(chr(cp))
+                    i += 3
+                    continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _load_loc_dir(loc_dir):
+    """读取汉化 mod 的 localisation（英文文件名 + 双字节文本）。"""
+    d = {}
+    files = sorted(glob.glob(os.path.join(loc_dir, "*_l_english.yml")))
+    if not files:
+        files = sorted(glob.glob(os.path.join(loc_dir, "*_english.yml")))
+    for path in files:
+        try:
+            with open(path, encoding="utf-8-sig", errors="replace") as f:
+                for line in f:
+                    m = _LOC_RE.match(line.lstrip())
+                    if not m:
+                        continue
+                    d[m.group(1)] = _clean_loc(_decode_loc(m.group(2)))
+        except OSError:
+            continue
+    return d
+
+
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _is_cn_mod(d):
+    """判断目录是不是中文汉化 mod：descriptor 名称，或本地化里能解出汉字。"""
+    desc = os.path.join(d, "descriptor.mod")
+    try:
+        with open(desc, encoding="utf-8-sig", errors="replace") as f:
+            txt = f.read().lower()
+        if any(k in txt for k in ("chinese", "translation", "中文", "汉化")):
+            return True
+    except OSError:
+        pass
+    files = sorted(glob.glob(os.path.join(d, "localisation", "*.yml")))[:6]
+    for path in files:
+        try:
+            with open(path, encoding="utf-8-sig", errors="replace") as f:
+                for i, line in enumerate(f):
+                    if i >= 300:
+                        break
+                    if _CJK_RE.search(_decode_loc(line)):
+                        return True
+        except OSError:
+            continue
+    return False
+
+
+def _loc_mod_dirs(root):
+    """工坊与文档目录里已安装的中文汉化 mod。"""
+    cands = []
+    steamapps = os.path.dirname(os.path.dirname(root))
+    ws = os.path.join(steamapps, "workshop", "content", "236850")
+    if os.path.isdir(ws):
+        try:
+            for name in sorted(os.listdir(ws)):
+                p = os.path.join(ws, name)
+                if os.path.isdir(os.path.join(p, "localisation")):
+                    cands.append(p)
+        except OSError:
+            pass
+    mdir = os.path.join(os.path.expanduser("~"), "Documents", "Paradox Interactive",
+                        "Europa Universalis IV", "mod")
+    if os.path.isdir(mdir):
+        try:
+            for name in sorted(os.listdir(mdir)):
+                p = os.path.join(mdir, name)
+                if os.path.isdir(os.path.join(p, "localisation")):
+                    cands.append(p)
+                elif name.lower().endswith(".mod"):
+                    try:
+                        with open(p, encoding="utf-8-sig", errors="replace") as f:
+                            txt = f.read()
+                    except OSError:
+                        continue
+                    m = re.search(r'path\s*=\s*"([^"]+)"', txt)
+                    if m:
+                        q = os.path.normpath(os.path.join(mdir, m.group(1)))
+                        if os.path.isdir(os.path.join(q, "localisation")):
+                            cands.append(q)
+        except OSError:
+            pass
+    out, seen = [], set()
+    for p in cands:
+        k = os.path.normcase(os.path.normpath(p))
+        if k in seen:
+            continue
+        seen.add(k)
+        if _is_cn_mod(p):
+            out.append(p)
+    out.sort(key=lambda x: x.lower())
+    return out
+
+
 def _tech_units(path):
     out, idx, last_year = {}, 0, ""
     for key, body, isb in _entries(_read(path)):
@@ -797,11 +1070,11 @@ def _scan_ideas(root, loc, zh=True):
                 if not isb or ik in reserved:
                     continue
                 eff = _mod_lines(ib, loc, zh, 30)
-                its.append({"label": loc.get(ik) or _pretty(ik), "effects": eff})
+                its.append({"label": _mod_label(ik, loc, zh), "effects": eff})
             if its:
                 secs.append({"label": ("理念 (%d)" % len(its)) if zh else ("Ideas (%d)" % len(its)),
                              "kind": "tiers", "items": its})
-            name = loc.get(gk) or _pretty(gk)
+            name = _mod_label(gk, loc, zh)
             desc = ("%s · %d 条理念" % (catname, len(its))) if zh else ("%s · %d ideas" % (catname, len(its)))
             ideas.append({
                 "key": gk, "name": name, "cat": catname, "catKey": ck,
@@ -815,8 +1088,10 @@ def _scan_ideas(root, loc, zh=True):
 
 # ---------------------------------------------------------------- 单位
 
-def _scan_units(root, loc, techs, zh=True):
+def _scan_units(root, loc, techs, zh=True, defs=None):
+    defs = defs or {}
     land, naval = [], []
+    grp_counts = {}
     files = sorted(glob.glob(os.path.join(root, "common", "units", "*.txt")))
     for path in files:
         key = os.path.splitext(os.path.basename(path))[0]
@@ -826,19 +1101,30 @@ def _scan_units(root, loc, techs, zh=True):
             continue
         is_land = t in LAND_TYPES
         grp = re.sub(r"_tech$", "", _scalar(body, "unit_type").lower())
-        grp_name = GROUP_CN.get(grp) if zh else GROUP_EN.get(grp)
-        grp_name = grp_name or _pretty(grp)
+        if is_land and not grp:
+            # 火炮没有写 unit_type：全科技组通用
+            grp = "_universal"
+        grp_name = (GROUP_CN.get(grp) if zh else GROUP_EN.get(grp)) or _pretty(grp)
         name = loc.get(key) or _pretty(key)
         info = techs.get(key) or {}
         tech = info.get("tech")
         year = info.get("year") or ""
         if is_land:
             typ = TYPE_CN.get(t, t) if zh else TYPE_EN.get(t, _pretty(t))
+            gold_key, mp_key = UNIT_COST.get(t, ("", ""))
+            gold = _cost(defs.get(gold_key))
+            mp = defs.get(mp_key)
+            men = _cost(mp * 1000) if isinstance(mp, float) else ""
+            gold_txt = (("%s 金币" % gold) if zh else ("%s ducats" % gold)) \
+                if gold != "—" else "—"
+            men_txt = (("%s 人" % men) if zh else ("%s men" % men)) if men else "—"
             attrs = [
                 {"label": "类型" if zh else "Type", "value": typ},
-                {"label": "科技组" if zh else "Tech group", "value": grp_name},
+                {"label": "科技组" if zh else "Tech group", "value": grp_name or "—"},
                 {"label": "军事科技" if zh else "Mil tech", "value": str(tech) if tech is not None else "—"},
                 {"label": "年份" if zh else "Year", "value": str(year) or "—"},
+                {"label": "招募花费" if zh else "Recruit cost", "value": gold_txt},
+                {"label": "人力成本" if zh else "Manpower cost", "value": men_txt},
                 {"label": "机动" if zh else "Maneuver", "value": _scalar(body, "maneuver") or "—"},
                 {"label": "火力（攻/防）" if zh else "Fire (off/def)",
                  "value": "%s / %s" % (_scalar(body, "offensive_fire") or "0",
@@ -850,29 +1136,52 @@ def _scan_units(root, loc, techs, zh=True):
                  "value": "%s / %s" % (_scalar(body, "offensive_morale") or "0",
                                         _scalar(body, "defensive_morale") or "0")},
             ]
-            desc = ("%s · %s" % (typ, grp_name)) + ((" · 军科 %s" % tech) if tech is not None else "")
+            desc = typ + ((" · %s" % grp_name) if grp_name else "")
+            desc += ((" · 军科 %s" % tech) if zh else (" · Mil tech %s" % tech)) \
+                if tech is not None else ""
+            if gold != "—":
+                desc += (" · %s 金币" % gold) if zh else (" · %s ducats" % gold)
+            if grp:
+                grp_counts[grp] = grp_counts.get(grp, 0) + 1
             land.append({"key": key, "name": name, "cat": typ, "catKey": t,
-                         "desc": desc, "effects": [], "attrs": attrs})
+                         "grpKey": grp, "desc": desc, "effects": [], "attrs": attrs})
         else:
             typ = TYPE_CN.get(t, t) if zh else TYPE_EN.get(t, _pretty(t))
+            gold_key, sail_key = SHIP_COST.get(t, ("", ""))
+            gold = _cost(defs.get(gold_key))
+            crew = _scalar(body, "sailors") or _cost(defs.get(sail_key))
             attrs = [
                 {"label": "类型" if zh else "Type", "value": typ},
                 {"label": "船体" if zh else "Hull", "value": _scalar(body, "hull_size") or "—"},
                 {"label": "火炮" if zh else "Cannons", "value": _scalar(body, "base_cannons") or "—"},
                 {"label": "封锁" if zh else "Blockade", "value": _scalar(body, "blockade") or "—"},
                 {"label": "航速" if zh else "Speed", "value": _scalar(body, "sail_speed") or "—"},
-                {"label": "水手" if zh else "Sailors", "value": _scalar(body, "sailors") or "—"},
+                {"label": "水手成本" if zh else "Sailor cost",
+                 "value": (("%s 人" % crew) if zh else ("%s sailors" % crew))
+                          if crew != "—" else "—"},
                 {"label": "贸易力量" if zh else "Trade power", "value": _scalar(body, "trade_power") or "—"},
             ]
+            pos = 1
             if tech is not None:
                 attrs.insert(1, {"label": "军事科技" if zh else "Mil tech", "value": str(tech)})
-            desc = ("%s · %s" % (typ, grp_name)) + ((" · 军科 %s" % tech) if tech is not None else "")
+                pos = 2
+            if gold != "—":
+                attrs.insert(pos, {"label": "建造花费" if zh else "Build cost",
+                    "value": ("%s 金币" % gold) if zh else ("%s ducats" % gold)})
+            desc = typ + ((" · %s" % grp_name) if grp_name else "")
+            desc += ((" · 军科 %s" % tech) if zh else (" · Mil tech %s" % tech)) \
+                if tech is not None else ""
+            if gold != "—":
+                desc += (" · %s 金币" % gold) if zh else (" · %s ducats" % gold)
             naval.append({"key": key, "name": name, "cat": typ, "catKey": t,
                           "desc": desc, "effects": [], "attrs": attrs})
     land.sort(key=lambda x: (LAND_TYPES.index(x["catKey"]), _sort_tech(techs, x["key"]), x["name"]))
     naval.sort(key=lambda x: (NAVAL_TYPES.index(x["catKey"]), _sort_tech(techs, x["key"]), x["name"]))
     orders = {"landunits": list(LAND_TYPES), "navalunits": list(NAVAL_TYPES)}
-    return land, naval, orders
+    unit_groups = [{"key": k, "name": (GROUP_CN.get(k) if zh else GROUP_EN.get(k)) or _pretty(k),
+                    "n": n} for k, n in grp_counts.items()]
+    unit_groups.sort(key=lambda g: (-g["n"], g["name"]))
+    return land, naval, orders, unit_groups
 
 
 GROUP_EN = {
@@ -883,6 +1192,8 @@ GROUP_EN = {
     "sub_saharan": "Sub-Saharan",
     "north_american": "North American", "south_american": "South American",
     "high_american": "High American", "central_american": "Central American",
+    "nomad_group": "Nomad", "polynesian": "Polynesian",
+    "_universal": "Universal (Artillery)",
 }
 
 
@@ -1023,11 +1334,87 @@ def _slug(s):
     return s or "tree"
 
 
-def _tree_name(stem):
-    s = re.sub(r"^\d+_", "", stem)
-    s = re.sub(r"_?Missions?$", "", s, flags=re.I)
+# 任务树文件名里的 DLC / 地区分组前缀（显示时保留，方便区分同一国家的多套任务）
+_TREE_PREFIX = {"AFR", "EMP", "DH", "WOC", "SCA", "KOK", "MND", "DOM", "GC",
+                "RB", "TR", "LVT", "PP", "EOC"}
+
+_TREE_SKIP = {"zz", "zzz", "zzzz", "zzzzz", "flavor", "shared", "and", "of", "the"}
+
+# 国名/形容词由本地化反查表解析，这里只补查不到的地名、方向词和少数特殊词
+_TREE_WORDS = {
+    "generic": "通用", "european": "欧洲", "african": "非洲", "asian": "亚洲",
+    "central": "中部", "east": "东部", "west": "西部", "north": "北部",
+    "south": "南部", "horn": "之角", "natives": "原住民", "native": "原住民",
+    "northeastern": "东北部", "northwestern": "西北部",
+    "southeastern": "东南部", "southwestern": "西南部",
+    "new": "新", "world": "世界", "spice": "香料", "islands": "群岛",
+    "minor": "小国", "minors": "小国", "pirate": "海盗", "pirates": "海盗",
+    "hansa": "汉萨", "mamluk": "马穆鲁克", "mamluks": "马穆鲁克",
+    "hannoverian": "汉诺威", "iroquoians": "易洛魁", "philippine": "菲律宾",
+    "gotlandish": "哥特兰", "trapezunite": "特拉比松",
+    "styriantyrol": "施蒂利亚-蒂罗尔", "savoyard": "萨伏依", "piedmontese": "皮埃蒙特",
+    "fla": "佛兰德", "brb": "布拉班特", "brb fla": "布拉班特/佛兰德",
+    "usa": "美国",
+    "daimyo": "大名", "britain": "不列颠", "california": "加利福尼亚",
+    "dreamtime": "梦幻时代", "high": "高原", "tags": "国家",
+}
+
+
+def _rev_loc(en_loc, loc):
+    """英文词条 → 汉化词条，供任务树名里国名/形容词自动汉化。"""
+    rev = {}
+    for k, v in en_loc.items():
+        z = loc.get(k)
+        if not z or not v or z == v or len(v) > 40:
+            continue
+        key = v.strip().lower()
+        if not key:
+            continue
+        cur = rev.get(key)
+        if cur is None or (k.endswith("_ADJ") and not cur[0].endswith("_ADJ")):
+            rev[key] = (k, z)
+    return rev
+
+
+def _tree_parts(stem, rev=None, zh=True):
+    """任务树文件名 → (汉化名, DLC/地区分组代号)。"""
+    s = re.sub(r"^\d+_", "", stem or "").strip()
+    s = re.sub(r"_?Missions?$", "", s, flags=re.I).strip()
     s = s.replace("_", " ").strip()
-    return s or "Missions"
+    if not s:
+        return "Missions", ""
+    if not zh or not rev:
+        return s, ""
+    words = [w for w in re.split(r"[ \t\-]+", s) if w]
+    codes = []
+    while words and (words[0].lower() in _TREE_SKIP or words[0].upper() in _TREE_PREFIX):
+        w = words[0]
+        # AFR 是地区分组，名字本身就是国名，不再显示代号
+        if w.upper() in _TREE_PREFIX and w.upper() != "AFR":
+            codes.append(w.upper())
+        words = words[1:]
+    if not words:
+        return s, "/".join(codes)
+    phrase = " ".join(words).lower()
+    hit = rev.get(phrase)
+    if hit:
+        cn = hit[1]
+    elif phrase in _TREE_WORDS:
+        cn = _TREE_WORDS[phrase]
+    else:
+        parts = []
+        for w in words:
+            lw = w.lower()
+            if lw in _TREE_SKIP:
+                continue
+            h = rev.get(lw)
+            parts.append(h[1] if h else (_TREE_WORDS.get(lw) or w))
+        cn = "".join(parts)
+    return (cn or s), "/".join(codes)
+
+
+def _tree_name(stem, rev=None, zh=True):
+    return _tree_parts(stem, rev, zh)[0]
 
 
 def _looks_series(body):
@@ -1047,14 +1434,35 @@ def _looks_mission(body):
     return False
 
 
-def _scan_missions(root, loc, zh=True):
+def _scan_missions(root, loc, zh=True, rev=None):
     trees = {}
     generic_ids = {"00_generic_missions", "01_generic_european_missions"}
+    items, seen = [], set()
     for path in sorted(glob.glob(os.path.join(root, "missions", "*.txt"))):
         stem = os.path.splitext(os.path.basename(path))[0]
         tid = _slug(stem)
-        if tid in trees:
+        if tid in seen:
             continue
+        seen.add(tid)
+        items.append([path, stem, tid, _tree_parts(stem, rev, zh)])
+    # 同名任务树（同一国家的本体版 / DLC 版）加代号区分，如「奥地利」与「奥地利（EMP）」
+    dup = {}
+    for it in items:
+        dup[it[3][0]] = dup.get(it[3][0], 0) + 1
+    for it in items:
+        base, code = it[3]
+        it.append("%s（%s）" % (base, code) if code and dup.get(base, 0) > 1 else base)
+    # 仍重名的（同一国家的多个版本文件，如 99_EMP_Austrian 与 EMP_Austrian）再带文件序号
+    used = {}
+    for it in items:
+        nm = it[4]
+        if used.get(nm):
+            num = re.match(r"^(\d+)_", it[1])
+            nm = "%s·%s" % (nm, num.group(1) if num else used[nm] + 1)
+            it[4] = nm
+        used[nm] = used.get(nm, 0) + 1
+
+    for path, stem, tid, _parts, name in items:
         series, implicit = [], []
         for key, body, isb in _entries(_read(path)):
             if not isb:
@@ -1092,9 +1500,15 @@ def _scan_missions(root, loc, zh=True):
                 nid = raw if raw not in byraw else "%s~%d" % (raw, len(nodes))
                 byraw.setdefault(raw, nid)
                 pre_raw = _list(mb, "required_missions")
+                ttl = loc.get(raw + "_title") or ""
+                if not ttl:
+                    # 动态标题（[Root.GetSelectableMissionTitle]）清洗后为空，用中文占位
+                    low = raw.lower()
+                    ttl = ("分支任务" if "branch" in low else
+                           "占位任务" if "dummy" in low else "可选任务")
                 nodes.append({
                     "id": nid, "raw": raw,
-                    "nm": loc.get(raw + "_title") or _pretty(raw),
+                    "nm": ttl,
                     "ds": loc.get(raw + "_desc") or "",
                     "icon": _scalar(mb, "icon") or "",
                     "pre": pre_raw,
@@ -1133,7 +1547,7 @@ def _scan_missions(root, loc, zh=True):
         x1 = max(n["x"] for n in nodes)
         y1 = max(n["y"] for n in nodes)
         trees[tid] = {
-            "id": tid, "name": _tree_name(stem), "n": len(nodes),
+            "id": tid, "name": name, "n": len(nodes),
             "default": tid in generic_ids, "x0": 0, "x1": x1, "y0": 0, "y1": y1,
             "focuses": nodes,
         }
@@ -1145,7 +1559,7 @@ def _scan_missions(root, loc, zh=True):
 
 # ---------------------------------------------------------------- 缓存与入口
 
-def _sig(root, loc_lang):
+def _sig(root, loc_lang, mod_dirs=None):
     parts = []
     dirs = [
         os.path.join(root, "common", "ideas"),
@@ -1153,36 +1567,57 @@ def _sig(root, loc_lang):
         os.path.join(root, "common", "technologies"),
         os.path.join(root, "common", "ages"),
         os.path.join(root, "common", "naval_doctrines"),
+        os.path.join(root, "common", "defines.lua"),
         os.path.join(root, "missions"),
         os.path.join(root, "localisation"),
         os.path.join(root, "interface"),
     ]
     for d in dirs:
         try:
-            files = glob.glob(os.path.join(d, "**", "*"), recursive=True)
-            files = [f for f in files if os.path.isfile(f)]
+            if os.path.isfile(d):
+                files = [d]
+            else:
+                files = glob.glob(os.path.join(d, "**", "*"), recursive=True)
+                files = [f for f in files if os.path.isfile(f)]
             size = sum(os.path.getsize(f) for f in files)
             mt = max((os.path.getmtime(f) for f in files), default=0)
             parts.append("%s:%d:%d:%d" % (os.path.basename(d), len(files), size, int(mt)))
         except Exception:
             parts.append("-")
+    for md in (mod_dirs or []):
+        try:
+            files = glob.glob(os.path.join(md, "localisation", "**", "*"), recursive=True)
+            files = [f for f in files if os.path.isfile(f)]
+            size = sum(os.path.getsize(f) for f in files)
+            mt = max((os.path.getmtime(f) for f in files), default=0)
+            parts.append("mod:%s:%d:%d:%d" % (os.path.basename(md), len(files), size, int(mt)))
+        except Exception:
+            parts.append("mod:-")
     parts.append(loc_lang)
     return "|".join(parts)
 
 
-def _cache_path(loc_lang):
-    return os.path.join(APP_DIR, "wiki_cache_eu4_%s.json" % (loc_lang or "english"))
+def _cache_path(tag):
+    return os.path.join(APP_DIR, "wiki_cache_eu4_%s.json" % (tag or "english"))
 
 
-def _build(root, loc_lang, zh):
+def _build(root, loc_lang, zh, mod_dirs=None):
     loc = _load_loc(os.path.join(root, "localisation"), loc_lang)
+    en_loc = dict(loc)          # 汉化 mod 覆盖前的英文词条，用于反查国名
+    if zh:
+        for md in (mod_dirs or []):
+            loc.update(_load_loc_dir(os.path.join(md, "localisation")))
+    rev = _rev_loc(en_loc, loc) if zh else None
+    global _EN_CN
+    _EN_CN = _build_en_cn(en_loc, loc) if zh else {}
+    defs = _defines(root)
     techs = _tech_units(os.path.join(root, "common", "technologies", "mil.txt"))
     ideas, idea_orders = _scan_ideas(root, loc, zh)
-    land, naval, unit_orders = _scan_units(root, loc, techs, zh)
+    land, naval, unit_orders, unit_groups = _scan_units(root, loc, techs, zh, defs)
     army, army_orders = _scan_army(zh)
     navy, navy_orders = _scan_navy(root, loc, zh)
     ages, age_orders = _scan_ages(root, loc, zh)
-    trees, slim = _scan_missions(root, loc, zh)
+    trees, slim = _scan_missions(root, loc, zh, rev)
     counts = {
         "ideas": len(ideas), "army": len(army), "landunits": len(land),
         "navalunits": len(naval), "navy": len(navy), "ages": len(ages),
@@ -1204,6 +1639,7 @@ def _build(root, loc_lang, zh):
         "loc": loc_lang, "tabs": tabs, "counts": counts,
         "ideas": ideas, "army": army, "landunits": land, "navalunits": naval,
         "navy": navy, "ages": ages, "catOrders": cat,
+        "unitGroups": unit_groups,
         "missionTrees": slim,
     }
     return data, trees
@@ -1217,15 +1653,17 @@ def load(game_root="", ui_lang="zh", force=False):
     lang = LANG_MAP.get((ui_lang or "zh").lower(), "english")
     loc_dir, loc_lang = _loc_dir(root, lang)
     zh = (ui_lang or "zh").lower() == "zh"
-    sig = _sig(root, loc_lang)
-    mem_key = "%s|%s" % (root.lower(), loc_lang)
+    mod_dirs = _loc_mod_dirs(root) if zh else []
+    tag = "zh" if zh else loc_lang
+    sig = _sig(root, loc_lang, mod_dirs)
+    mem_key = "%s|%s|%s" % (root.lower(), loc_lang, "zh" if mod_dirs else "")
     with _LOCK:
         hit = _MEM.get(mem_key)
         if hit and hit[0] == sig and not force:
             data = dict(hit[1])
             data["cached"] = True
             return data
-        cpath = _cache_path(loc_lang)
+        cpath = _cache_path(tag)
         if not force:
             try:
                 with open(cpath, encoding="utf-8") as f:
@@ -1244,7 +1682,7 @@ def load(game_root="", ui_lang="zh", force=False):
                 pass
 
         t0 = time.time()
-        data, trees = _build(root, loc_lang, zh)
+        data, trees = _build(root, loc_lang, zh, mod_dirs)
         data["buildSeconds"] = round(time.time() - t0, 1)
         _TREES.clear()
         _TREES.update(trees)

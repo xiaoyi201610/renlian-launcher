@@ -315,15 +315,104 @@ def _icon_cache_dir(appid: str) -> str:
     return d
 
 
-def _dds_dir(game_root: str) -> str:
+# 各游戏成就图标目录相对游戏根目录的位置：
+#   CK3 / Vic3 / Imperator: game/gfx/interface/icons/achievements
+#   Stellaris:              gfx/interface/icons/achievements
+#   HOI4:                   gfx/achievements
+#   EU4:                    gfx/interface/achievements
+_ICON_REL_DIRS = (
+    ("game", "gfx", "interface", "icons", "achievements"),
+    ("gfx", "interface", "icons", "achievements"),
+    ("gfx", "achievements"),
+    ("gfx", "interface", "achievements"),
+)
+
+
+def _dds_dirs(game_root: str) -> list[str]:
     if not game_root:
+        return []
+    out = []
+    for rel in _ICON_REL_DIRS:
+        p = os.path.join(game_root, *rel)
+        if os.path.isdir(p):
+            out.append(p)
+    return out
+
+
+def _dds_dir(game_root: str) -> str:
+    """兼容旧调用：返回第一个存在的图标目录。"""
+    dirs = _dds_dirs(game_root)
+    return dirs[0] if dirs else ""
+
+
+# 未解锁图标的命名后缀（各游戏不同）：
+#   CK3 / Vic3 / Imperator: _notachieved
+#   Stellaris:              _locked
+#   HOI4:                   _grey / _not_eligible
+#   EU4:                    只有彩版，没有灰版
+_GRAY_SUFFIXES = ("_notachieved", "_locked", "_grey", "_gray", "_not_eligible")
+
+
+def _icon_bases(api_name: str) -> list[str]:
+    """图标文件名候选：原名、规范化名、去/加前缀名、修正常见拼写错误。"""
+    raw = re.sub(r'[\\/:*?"<>|]', "", (api_name or "").strip())
+    if not raw:
+        return []
+    norm = re.sub(r"[^0-9A-Za-z_]", "_", raw)
+    out = [raw]
+    if norm != raw:
+        out.append(norm)
+    # Steam 成就表里有拼写错误（achieviement_），游戏文件用正确拼写
+    if raw.startswith("achieviement_"):
+        out.append("achievement_" + raw[len("achieviement_"):])
+    for pre in ("achievement_", "ach_"):
+        if raw.startswith(pre) and len(raw) > len(pre):
+            out.append(raw[len(pre):])
+            if norm.startswith(pre):
+                out.append(norm[len(pre):])
+        else:
+            out.append(pre + raw)
+    seen, uniq = set(), []
+    for n in out:
+        if n and n not in seen:
+            seen.add(n)
+            uniq.append(n)
+    return uniq
+
+
+def _find_dds(game_root: str, api_name: str, gray: bool = False) -> str:
+    """在游戏目录里找成就 DDS：依次尝试各目录 / 文件名 / 解锁状态后缀。"""
+    bases = _icon_bases(api_name)
+    if not bases:
         return ""
-    return os.path.join(game_root, "game", "gfx", "interface", "icons", "achievements")
+    suffixes = list(_GRAY_SUFFIXES) if gray else [""]
+    for d in _dds_dirs(game_root):
+        for base in bases:
+            for suf in suffixes:
+                p = os.path.join(d, base + suf + ".dds")
+                if os.path.isfile(p):
+                    return p
+    return ""
+
+
+# 个别游戏的部分成就（多为未安装 DLC）没有单独图标文件，
+# 用游戏自带的成就奖杯图作占位，避免只剩“名字首字”。
+_GENERIC_ICONS = {
+    "281990": ("gfx", "interface", "buttons", "main_menu_achievements.dds"),  # Stellaris
+}
+
+
+def _generic_dds(appid: str, game_root: str) -> str:
+    rel = _GENERIC_ICONS.get(appid)
+    if not rel or not game_root:
+        return ""
+    p = os.path.join(game_root, *rel)
+    return p if os.path.isfile(p) else ""
 
 
 def local_icon_png(appid: str, game_root: str, api_name: str, gray: bool = False) -> str:
     """返回本地 PNG 图标路径（必要时从游戏 DDS 转一次并存缓存）。找不到返回空串。"""
-    name = re.sub(r"[^0-9A-Za-z_]", "", api_name or "")
+    name = re.sub(r"[^0-9A-Za-z_]", "_", api_name or "")
     if not name:
         return ""
     cache_dir = _icon_cache_dir(appid)
@@ -331,13 +420,12 @@ def local_icon_png(appid: str, game_root: str, api_name: str, gray: bool = False
     if os.path.isfile(out) and os.path.getsize(out) > 0:
         return out
 
-    src_dir = _dds_dir(game_root)
-    if not src_dir or not os.path.isdir(src_dir):
-        return ""
-    src = os.path.join(src_dir, name + ("_notachieved" if gray else "") + ".dds")
-    if not os.path.isfile(src) and gray:
-        src = os.path.join(src_dir, name + ".dds")   # 没有灰版就退回彩版
-    if not os.path.isfile(src):
+    src = _find_dds(game_root, api_name, gray)
+    if not src and gray:
+        src = _find_dds(game_root, api_name, False)   # 没有灰版就退回彩版
+    if not src:
+        src = _generic_dds(appid, game_root)          # 再退回通用成就图标
+    if not src:
         return ""
     # 串行转换：Pillow 解码是 CPU 密集，几十个请求并发抢 CPU 反而更慢
     with _ICON_LOCK:

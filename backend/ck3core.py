@@ -1181,6 +1181,8 @@ class LauncherDB:
         else:
             self.path = primary_path
         self.dlc_load_path = os.path.join(user_dir, "dlc_load.json")
+        # Victoria 3 的启停清单不是 dlc_load.json，而是 content_load.json
+        self.content_load_path = os.path.join(user_dir, "content_load.json")
         self._schema_ok = False
 
     # ---- 基础
@@ -1272,7 +1274,7 @@ class LauncherDB:
                     return None
                 rows = c.execute(
                     """SELECT pm.modId, pm.enabled, pm.position,
-                              m.name, m.displayName, m.steamId, m.dirPath, m.source
+                              m.name, m.displayName, m.steamId, m.dirPath, m.archivePath, m.source
                        FROM playsets_mods pm JOIN mods m ON m.id = pm.modId
                        WHERE pm.playsetId = ? ORDER BY pm.position""",
                     (psid,),
@@ -1318,8 +1320,20 @@ class LauncherDB:
         except Exception:
             return set()
 
-    # ---- dlc_load.json
+    # ---- 游戏启停清单（CK3 等用 dlc_load.json，Vic3 用 content_load.json）
     def read_dlc_load(self) -> dict:
+        if self.game == "vic3":
+            cl = self.read_content_load()
+            return {
+                "disabled_dlcs": [
+                    x.get("paradoxAppId") for x in (cl.get("disabledDLC") or [])
+                    if isinstance(x, dict) and x.get("paradoxAppId")
+                ],
+                "enabled_mods": [
+                    x.get("path") for x in (cl.get("enabledMods") or [])
+                    if isinstance(x, dict) and x.get("path")
+                ],
+            }
         if not os.path.isfile(self.dlc_load_path):
             return {"disabled_dlcs": [], "enabled_mods": []}
         try:
@@ -1341,6 +1355,47 @@ class LauncherDB:
         with open(tmp, "w", encoding="utf-8", newline="\n") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(tmp, self.dlc_load_path)
+        return bak
+
+    # ---- content_load.json（Victoria 3）
+    def read_content_load(self) -> dict:
+        default = {"enabledMods": [], "disabledDLC": [], "enabledUGC": []}
+        if not self.user_dir or not os.path.isfile(self.content_load_path):
+            return default
+        try:
+            with open(self.content_load_path, "r", encoding="utf-8-sig") as f:
+                d = json.load(f)
+            if not isinstance(d, dict):
+                return default
+            d.setdefault("enabledMods", [])
+            d.setdefault("disabledDLC", [])
+            d.setdefault("enabledUGC", [])
+            return d
+        except Exception:
+            return default
+
+    def write_content_load(self, enabled_mods: list[dict], disabled_dlcs: list[dict],
+                           enabled_ugc: list | None = None) -> str | None:
+        """按官方 1.1 格式写 Vic3 启停清单。
+
+        enabledMods / disabledDLC / enabledUGC 都是对象数组；
+        enabledUGC 不归启动器管，默认原样保留。
+        """
+        if not self.user_dir:
+            return None
+        old = self.read_content_load()
+        data = {
+            "enabledMods": [x for x in enabled_mods if isinstance(x, dict)],
+            "disabledDLC": [x for x in disabled_dlcs if isinstance(x, dict)],
+            "enabledUGC": enabled_ugc if enabled_ugc is not None else (old.get("enabledUGC") or []),
+        }
+        if "formatVersion" in old:
+            data["formatVersion"] = old["formatVersion"]
+        bak = backup_file(self.content_load_path, "content_load")
+        tmp = self.content_load_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, self.content_load_path)
         return bak
 
     # ---- mod 注册
@@ -1451,8 +1506,9 @@ class LauncherDB:
         return {"sqliteBackup": bak_sql, "synced": synced}
 
     def sync_dlc_load(self, psid: str) -> str | None:
-        """把播放集里启用的 mod 按 position 写入 dlc_load.json（同一文件保序去重）。
+        """把播放集里启用的 mod 按 position 写入游戏启停清单（同一项保序去重）。
 
+        Vic3 写 content_load.json；其余游戏写 dlc_load.json。
         disabled_dlcs 恒写空：CK3 1.20 引擎已忽略这个字段（无条件加载
         game/dlc/ 下所有 .dlc 文件），真正的 DLC 禁用靠改 .dlc 文件扩展名
         （set_dlc_file_state）。这里写空是为了和官方启动器/朗文保持一致。
@@ -1460,6 +1516,8 @@ class LauncherDB:
         ps = self.get_playset(psid)
         if not ps:
             return None
+        if self.game == "vic3":
+            return self._sync_content_load(ps)
         mod_file_map = _mod_id_to_file_map(self)
         enabled_mods: list[str] = []
         seen: set = set()
@@ -1475,6 +1533,53 @@ class LauncherDB:
             seen.add(k)
             enabled_mods.append(f)
         return self.write_dlc_load(enabled_mods, [])
+
+    def _sync_content_load(self, ps: dict) -> str | None:
+        """Vic3：按官方 1.1 格式写 content_load.json。
+
+        enabledMods 是 [{path: mod 绝对目录/压缩包}]，disabledDLC 是
+        [{paradoxAppId: pops_id}]，enabledUGC 原样保留。
+        """
+        enabled: list[dict] = []
+        seen: set = set()
+        for m in ps.get("mods") or []:
+            if not m.get("enabled"):
+                continue
+            path = ""
+            for cand in ((m.get("dirPath") or "").strip(),
+                         (m.get("archivePath") or "").strip()):
+                if not cand:
+                    continue
+                full = os.path.abspath(cand)
+                if os.path.isdir(full) or os.path.isfile(full):
+                    path = full
+                    break
+            if not path:
+                continue
+            k = os.path.normcase(path)
+            if k in seen:
+                continue
+            seen.add(k)
+            enabled.append({"path": path})
+
+        disabled: list[dict] = []
+        try:
+            installed = {
+                d["popsId"] for d in list_dlcs(
+                    {"gameRoot": self.game_root, "currentGame": self.game}
+                ) if d.get("installed")
+            }
+        except Exception:
+            installed = None
+        for pops, on in (ps.get("dlcs") or {}).items():
+            if on:
+                continue
+            if installed is not None and pops not in installed:
+                continue
+            disabled.append({"paradoxAppId": pops})
+
+        old = self.read_content_load()
+        return self.write_content_load(enabled, disabled, old.get("enabledUGC") or [])
 
     def set_active(self, psid: str) -> bool:
         backup_file(self.path, os.path.splitext(os.path.basename(self.path))[0])
@@ -3127,69 +3232,214 @@ def refresh_dlc_from_steam(game: str) -> dict:
 DISABLED_SUFFIX = ".disabled"
 
 
-def set_dlc_file_state(game_root: str, dir_name: str, enabled: bool,
-                       game: str = "ck3") -> bool:
-    """真正禁用/启用某个 DLC：改 .dlc 文件的扩展名。
-
-    CK3 引擎靠扫描 game/dlc/*/xxx.dlc 发现 DLC，`disabled_dlcs` 字段在 1.20
-    已失效。唯一可靠的禁用方式是把 xxx.dlc 改名为 xxx.dlc.disabled，引擎
-    扫不到就不会加载。启用则是改回来。
-    """
+def dlc_root_dir(game_root: str, game: str = "ck3") -> str:
+    """游戏的 dlc 目录绝对路径（<content>/dlc）。"""
     if not game_root:
-        return False
-    content = _game_content_dir(game_root, game)
-    dlc_dir = os.path.join(content, "dlc", dir_name)
-    if not os.path.isdir(dlc_dir):
-        return False
+        return ""
+    return os.path.join(_game_content_dir(game_root, game), "dlc")
+
+
+def _path_writable(p: str) -> bool:
+    """粗略判断路径可写（Windows 下 os.access 能识别只读属性）。"""
     try:
-        # 找到当前实际的 .dlc 文件（可能是 xxx.dlc 或 xxx.dlc.disabled）
-        cur = None
-        for fn in os.listdir(dlc_dir):
-            low = fn.lower()
-            if low.endswith(".dlc") or low.endswith(DISABLED_SUFFIX):
-                cur = os.path.join(dlc_dir, fn)
-                break
-        if cur is None:
-            return False
-        base = os.path.basename(cur)
-        if enabled:
-            # 启用：去掉 .disabled 后缀
-            if base.lower().endswith(DISABLED_SUFFIX):
-                new = os.path.join(dlc_dir, base[: -len(DISABLED_SUFFIX)])
-                if not os.path.exists(new):
-                    os.rename(cur, new)
-                return True
-            return True  # 已经是启用状态
-        else:
-            # 禁用：加 .disabled 后缀
-            if base.lower().endswith(DISABLED_SUFFIX):
-                return True  # 已经禁用
-            new = os.path.join(dlc_dir, base + DISABLED_SUFFIX)
-            if not os.path.exists(new):
-                os.rename(cur, new)
-            return True
+        return os.access(p, os.W_OK)
     except Exception:
         return False
+
+
+def _clear_readonly(p: str) -> None:
+    """去掉文件的只读属性，避免改名时报 PermissionError。"""
+    try:
+        if not os.access(p, os.W_OK):
+            os.chmod(p, 0o666)
+    except Exception:
+        pass
+
+
+def _unique_path(p: str) -> str:
+    """若 p 已存在，返回 p_2 / p_3 … 这类不冲突的名字。"""
+    if not os.path.exists(p):
+        return p
+    base, ext = os.path.splitext(p)
+    i = 2
+    while os.path.exists("%s_%d%s" % (base, i, ext)):
+        i += 1
+    return "%s_%d%s" % (base, i, ext)
+
+
+def _dlc_dir_files(d: str) -> tuple[list[str], list[str]]:
+    """列出一个 DLC 目录下的有效清单和已禁用清单。"""
+    active, disabled = [], []
+    for fn in os.listdir(d):
+        low = fn.lower()
+        if low.endswith(".dlc" + DISABLED_SUFFIX):
+            disabled.append(fn)
+        elif low.endswith(".dlc"):
+            active.append(fn)
+    return active, disabled
+
+
+def inspect_dlc_file_state(game_root: str, dir_name: str, game: str = "ck3") -> dict:
+    """只读检查某个 DLC 的 .dlc 文件实际状态。
+
+    返回 {
+      exists: 是否找到 DLC 目录/文件,
+      dir: 实际检查的目录,
+      active: [启用的文件名], disabled: [被改名禁用的文件名],
+      writable: 目录/文件是否可写,
+      actual: "enabled" | "disabled" | "missing",
+      conflict: 同时存在 .dlc 和 .dlc.disabled（重复文件）,
+      reason: 无法检查时的中文原因
+    }
+    """
+    info = {
+        "exists": False, "dir": "", "active": [], "disabled": [],
+        "writable": False, "actual": "missing", "conflict": False, "reason": "",
+    }
+    root = dlc_root_dir(game_root, game)
+    if not root or not os.path.isdir(root):
+        info["reason"] = "找不到游戏的 dlc 目录，请检查游戏安装路径是否正确"
+        return info
+
+    sub = os.path.join(root, dir_name) if dir_name else ""
+    if sub and os.path.isdir(sub):
+        # 子目录型（CK3/VIC3/HOI4 等）：dlc/dlc001_xxx/xxx.dlc
+        info["dir"] = sub
+        info["exists"] = True
+        try:
+            info["active"], info["disabled"] = _dlc_dir_files(sub)
+        except Exception as ex:
+            info["reason"] = "读取 DLC 目录失败：%s" % ex
+            return info
+        info["writable"] = _path_writable(sub) and all(
+            _path_writable(os.path.join(sub, fn))
+            for fn in (info["active"] + info["disabled"])
+        )
+    else:
+        # 平铺型（CK2）：dlc/dlc001.dlc
+        if not dir_name:
+            info["reason"] = "无法定位这个 DLC 的目录"
+            return info
+        info["dir"] = root
+        try:
+            names = os.listdir(root)
+        except Exception as ex:
+            info["reason"] = "读取 DLC 目录失败：%s" % ex
+            return info
+        want_active = (dir_name + ".dlc").lower()
+        want_disabled = want_active + DISABLED_SUFFIX
+        for fn in names:
+            low = fn.lower()
+            if low == want_active:
+                info["active"].append(fn)
+            elif low == want_disabled:
+                info["disabled"].append(fn)
+        info["exists"] = bool(info["active"] or info["disabled"])
+        info["writable"] = _path_writable(root) and all(
+            _path_writable(os.path.join(root, fn))
+            for fn in (info["active"] + info["disabled"])
+        )
+        if not info["exists"]:
+            info["reason"] = "没有找到这个 DLC 的 .dlc 文件（可能未安装）"
+
+    info["conflict"] = bool(info["active"]) and bool(info["disabled"])
+    if info["active"]:
+        info["actual"] = "enabled"
+    elif info["disabled"]:
+        info["actual"] = "disabled"
+    else:
+        info["actual"] = "missing"
+    return info
+
+
+def apply_dlc_file_state(game_root: str, dir_name: str, enabled: bool,
+                         game: str = "ck3") -> dict:
+    """启用/禁用某个 DLC，并把真实结果返回给调用方（不再静默失败）。
+
+    禁用必须确保目录里**没有任何**有效 .dlc（游戏只扫描 .dlc），启用必须
+    把所有 .dlc.disabled 改回 .dlc。改名后会重新检查文件状态，以实际状态
+    作为成功依据，避免“rename 没生效却报成功”。
+    """
+    res = {
+        "ok": False, "dir": "", "changed": [], "active": [], "disabled": [],
+        "writable": False, "actual": "missing", "conflict": False, "reason": "",
+    }
+    st = inspect_dlc_file_state(game_root, dir_name, game)
+    res.update({k: st[k] for k in ("dir", "writable", "actual", "conflict")})
+    if not st["exists"] or (not st["active"] and not st["disabled"]):
+        res["reason"] = st["reason"] or (
+            "没有找到这个 DLC 的 .dlc 文件（可能未安装），无法%s"
+            % ("启用" if enabled else "关闭")
+        )
+        return res
+
+    d = st["dir"]
+    want = "enabled" if enabled else "disabled"
+    try:
+        if enabled:
+            # 启用：去掉 .disabled；若同名 .dlc 已存在则把重复文件挪成 .bak
+            for fn in list(st["disabled"]):
+                src = os.path.join(d, fn)
+                tgt = src[:-len(DISABLED_SUFFIX)]
+                if os.path.exists(tgt):
+                    os.rename(src, _unique_path(src + ".bak"))
+                    continue
+                _clear_readonly(src)
+                os.rename(src, tgt)
+                res["changed"].append(tgt)
+        else:
+            # 禁用：必须让所有 .dlc 都消失，否则游戏仍会加载它
+            for fn in list(st["active"]):
+                src = os.path.join(d, fn)
+                tgt = src + DISABLED_SUFFIX
+                if os.path.exists(tgt):
+                    tgt = _unique_path(tgt + ".bak")
+                _clear_readonly(src)
+                os.rename(src, tgt)
+                res["changed"].append(tgt)
+    except PermissionError:
+        res["reason"] = ("没有权限修改 DLC 文件：游戏可能正在运行，或文件被设为只读。"
+                         "请完全退出游戏后重试；仍失败就用管理员身份运行启动器。")
+        return res
+    except OSError as ex:
+        we = getattr(ex, "winerror", None)
+        if we == 32:
+            res["reason"] = ("DLC 文件正被其他程序占用（游戏可能正在运行）。"
+                             "请完全退出游戏和官方启动器后重试。")
+        elif we == 5:
+            res["reason"] = ("拒绝访问：没有修改 DLC 文件的权限。"
+                             "请用管理员身份运行启动器，或检查游戏目录是否只读。")
+        else:
+            res["reason"] = "修改 DLC 文件失败：%s" % ex
+        return res
+
+    # 写入后自检：以文件实际状态为准
+    st2 = inspect_dlc_file_state(game_root, dir_name, game)
+    res.update({
+        "active": st2["active"], "disabled": st2["disabled"],
+        "actual": st2["actual"], "writable": st2["writable"],
+        "conflict": st2["conflict"],
+    })
+    if st2["actual"] == want:
+        res["ok"] = True
+    elif want == "disabled":
+        res["reason"] = ("改名后仍检测到有效的 .dlc 文件（同时存在重复文件），"
+                         "关闭没有完全生效；请退出游戏后点「开关自检」重试。")
+    else:
+        res["reason"] = ("仍存在 .dlc.disabled 文件，启用没有生效；"
+                         "请退出游戏后点「开关自检」重试。")
+    return res
+
+
+def set_dlc_file_state(game_root: str, dir_name: str, enabled: bool,
+                       game: str = "ck3") -> bool:
+    """兼容旧调用：只返回是否成功。新代码请用 apply_dlc_file_state 取失败原因。"""
+    return bool(apply_dlc_file_state(game_root, dir_name, enabled, game).get("ok"))
 
 
 def dlc_file_disabled(game_root: str, dir_name: str, game: str = "ck3") -> bool:
-    """某个 DLC 的 .dlc 文件是否已被改名禁用。"""
-    if not game_root:
-        return False
-    content = _game_content_dir(game_root, game)
-    dlc_dir = os.path.join(content, "dlc", dir_name)
-    if not os.path.isdir(dlc_dir):
-        return False
-    try:
-        for fn in os.listdir(dlc_dir):
-            low = fn.lower()
-            if low.endswith(DISABLED_SUFFIX):
-                return True
-            if low.endswith(".dlc"):
-                return False
-    except Exception:
-        pass
-    return False
+    """某个 DLC 当前是否真的处于禁用状态（以有效 .dlc 是否消失为准）。"""
+    return inspect_dlc_file_state(game_root, dir_name, game).get("actual") == "disabled"
 
 
 def detect_dlc_patch(game_root: str, game: str = "ck3") -> dict:
@@ -3534,9 +3784,14 @@ def launch_game(cfg: dict, psid: str | None = None, debug: bool = False,
 
     db = LauncherDB(cfg.get("userDir") or "", cfg.get("gameRoot") or "", _game_key(cfg))
     target = psid or db.active_playset()
+    if not target:
+        # 没有任何激活播放集时，按界面上默认显示的列表第一个播放集同步，
+        # 否则直接启动会加载 0 个 mod / 全部 DLC。
+        ps = db.list_playsets()
+        target = ps[0]["id"] if ps else None
     if target:
-        if psid and psid != db.active_playset():
-            db.set_active(psid)
+        if target != db.active_playset():
+            db.set_active(target)
         else:
             db.sync_dlc_load(target)
 

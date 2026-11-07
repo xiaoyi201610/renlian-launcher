@@ -113,10 +113,12 @@ def run_with_webview(url: str) -> bool:
         def _watchdog():
             time.sleep(8)
             try:
+                # 只判断「页面框架是否真的加载了」。不能要求 #view 里已有内容：
+                # 首次启动要扫模组、读数据库，boot() 可能要十几秒才渲染出内容，
+                # 按内容判断会把正常窗口误判成黑屏（1.7.0.5 就是这样误回退到 Edge 的）。
                 ok = win.evaluate_js(
                     "(document.readyState==='complete')"
                     " && !!document.querySelector('#view')"
-                    " && document.querySelector('#view').childElementCount > 0"
                 )
             except Exception as wex:
                 # 探测本身失败通常意味着 WebView2 根本没起来（窗口是死的黑底），
@@ -149,7 +151,42 @@ def run_with_webview(url: str) -> bool:
         return False
 
 
-def run_with_edge(url: str) -> bool:
+def _window_titles() -> list:
+    """枚举当前所有可见窗口的标题（用于判断 Edge 窗口是否还开着）。"""
+    titles = []
+    try:
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        cb_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        def _cb(hwnd, _):
+            try:
+                if user32.IsWindowVisible(hwnd):
+                    n = user32.GetWindowTextLengthW(hwnd)
+                    if n > 0:
+                        buf = ctypes.create_unicode_buffer(n + 1)
+                        user32.GetWindowTextW(hwnd, buf, n + 1)
+                        if buf.value:
+                            titles.append(buf.value)
+            except Exception:
+                pass
+            return True
+
+        user32.EnumWindows(cb_type(_cb), 0)
+    except Exception:
+        pass
+    return titles
+
+
+def _app_window_alive(port: int) -> bool:
+    needle = f"127.0.0.1:{port}"
+    for t in _window_titles():
+        if needle in t or APP_TITLE in t:
+            return True
+    return False
+
+
+def run_with_edge(url: str, port: int) -> bool:
     edge = find_edge()
     if not edge:
         return False
@@ -166,8 +203,22 @@ def run_with_edge(url: str) -> bool:
         "--disable-features=Translate,ImportDataPrompt",
     ]
     try:
+        started = time.time()
         proc = subprocess.Popen(args, close_fds=True)
         proc.wait()
+        # Edge 用同一个 user-data-dir 时，如果已经有 Edge（比如上次回退留下的
+        # 启动器窗口）在跑，新进程只是把 URL 交给老进程，自己立刻退出。
+        # 这时如果跟着收工、关掉本地服务，用户看到的就是
+        # “127.0.0.1 拒绝连接”——1.7.0.5 的故障就是这个。
+        # 所以：进程秒退说明窗口由别的进程托管，继续守着窗口，直到它关掉。
+        if time.time() - started < 3:
+            _log("Edge 启动被现有实例接管，继续为窗口提供本地服务")
+            last_seen = time.time()
+            while time.time() - last_seen <= 40:
+                time.sleep(2)
+                if _app_window_alive(port):
+                    last_seen = time.time()
+            _log("已检测不到启动器窗口，关闭本地服务")
         return True
     except Exception:
         return False
@@ -304,7 +355,7 @@ def main():
     threading.Thread(target=lambda: srv.CTX.mods(), daemon=True).start()
 
     if not run_with_webview(url):
-        if not run_with_edge(url):
+        if not run_with_edge(url, port):
             import webbrowser
             webbrowser.open(url)
             print("已用默认浏览器打开：", url)
