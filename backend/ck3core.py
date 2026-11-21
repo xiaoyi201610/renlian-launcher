@@ -25,6 +25,7 @@ import ctypes
 import shutil
 import sqlite3
 import zipfile
+import hashlib
 import threading
 import contextlib
 import subprocess
@@ -151,6 +152,15 @@ GAME_DEFS: dict[str, dict] = {
 GAME_ORDER = ["ck3", "stellaris", "hoi4", "vic3", "eu4", "eu5", "ck2",
               "imperator", "skylines", "skylines2"]
 
+# 使用 content_load.json（formatVersion 1.1）的游戏；其余走 dlc_load.json。
+# 依据官方启动器 asar：LFV0 的游戏列表不含 eu5，Vic3/EU5 属 LFV1_1。
+CONTENT_LOAD_GAMES = ("vic3", "eu5")
+
+
+def _uses_content_load(game: str) -> bool:
+    return game in CONTENT_LOAD_GAMES
+
+
 # 封面图：本地 static/img/games/ 下，前端经 /static/ 前缀访问
 def game_cover(game: str, size: str = "sm") -> str:
     """返回某游戏封面图的本地静态 URL（前端 /static/ 前缀引用）。
@@ -209,10 +219,60 @@ CONFIG_PATH = os.path.join(APP_DIR, "launcher-config.json")
 BACKUP_DIR = os.path.join(APP_DIR, "backups")
 DLC_CACHE_PATH = os.path.join(APP_DIR, "dlc_meta_cache.json")  # 运行时刷新的 DLC 清单缓存
 MOD_ALIAS_PATH = os.path.join(APP_DIR, "mod-aliases.json")     # mod 自定义显示名（按游戏分存）
+LOAD_SIG_PATH = os.path.join(APP_DIR, "load-sync-state.json")  # 上次写入启停文件的指纹（防覆盖检测）
+
+_CACHE_DIR = ""
+
+
+def set_cache_dir(path: str) -> None:
+    """设置缓存根目录（来自配置项 cacheDir）。留空表示跟随程序目录。"""
+    global _CACHE_DIR
+    _CACHE_DIR = (path or "").strip()
+
+
+def cache_dir() -> str:
+    """缓存根目录：缩略图、百科缓存、成就图标等都写这里。
+    目录不可创建/不可写时静默回退到程序目录，避免影响主流程。"""
+    d = _CACHE_DIR or APP_DIR
+    try:
+        os.makedirs(d, exist_ok=True)
+        return d
+    except Exception:
+        return APP_DIR
 MAX_BACKUPS = 12          # 每种文件最多保留几份
 BACKUP_MIN_INTERVAL = 20  # 同一目标在这么多秒内只备份一次，避免连续保存刷屏
 
 _backup_stamp: dict = {}
+
+
+def _sha1_file(path: str) -> str:
+    """文件 SHA1；读不到返回空串。"""
+    try:
+        h = hashlib.sha1()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return ""
+
+
+def _load_sig_state() -> dict:
+    try:
+        with open(LOAD_SIG_PATH, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_load_sig_state(data: dict) -> None:
+    try:
+        with open(LOAD_SIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
 
 DEFAULT_CONFIG = {
     "currentGame": "ck3",        # 当前选中的游戏代号
@@ -228,6 +288,8 @@ DEFAULT_CONFIG = {
     "minimizeOnLaunch": False,   # 启动游戏后最小化启动器
     "closeOnLaunch": False,      # 启动游戏后关闭启动器
     "useDataPathArg": False,     # 启动游戏时传 -dataPath（自定义数据目录时用）
+    "eu4ForceOrder": False,      # EU4 强制排序：改写 .mod 的 name= 前缀，让播放集顺序真正生效
+    "cacheDir": "",              # 缓存根目录；留空=程序所在目录（缩略图/百科/成就图标都放这）
     "uiLang": "zh",              # 界面语言：zh / en / fr / de / sv
     "updateUrl": "https://gitee.com/xiaoyi2233/renlian-launcher/raw/master/version.json",  # 版本自检地址（GitHub raw 被墙，默认用 Gitee raw；留空则不检查）
 }
@@ -319,6 +381,8 @@ def load_config(game: str | None = None) -> dict:
         pass
     cfg.update(raw)
     cfg["games"] = cfg.get("games") or {}
+    # 缓存目录是全局设置，读配置时同步给各模块使用
+    set_cache_dir(cfg.get("cacheDir") or "")
 
     # 向后兼容：旧单游戏字段迁入 games["ck3"]
     legacy = cfg["games"].get("ck3") or {}
@@ -343,7 +407,7 @@ def load_config(game: str | None = None) -> dict:
         merged = dict(DEFAULT_CONFIG)
         # 顶层通用开关
         for fld in ("autoBackup", "rememberLastPlayset", "minimizeOnLaunch",
-                    "closeOnLaunch", "useDataPathArg"):
+                    "closeOnLaunch", "useDataPathArg", "eu4ForceOrder", "cacheDir"):
             merged[fld] = cfg.get(fld, DEFAULT_CONFIG[fld])
         merged["currentGame"] = key
         g = _game_cfg(cfg, key)
@@ -402,7 +466,8 @@ def save_config(cfg: dict) -> None:
     data: dict = {}
     # 通用开关
     for fld in ("autoBackup", "rememberLastPlayset", "minimizeOnLaunch",
-                "closeOnLaunch", "useDataPathArg", "uiLang", "updateUrl"):
+                "closeOnLaunch", "useDataPathArg", "eu4ForceOrder", "cacheDir",
+                "uiLang", "updateUrl"):
         data[fld] = cfg.get(fld, DEFAULT_CONFIG[fld])
     data["currentGame"] = _game_key(cfg)
     data["games"] = games
@@ -1181,9 +1246,11 @@ class LauncherDB:
         else:
             self.path = primary_path
         self.dlc_load_path = os.path.join(user_dir, "dlc_load.json")
-        # Victoria 3 的启停清单不是 dlc_load.json，而是 content_load.json
+        # Victoria 3 / EU5 的启停清单不是 dlc_load.json，而是 content_load.json
         self.content_load_path = os.path.join(user_dir, "content_load.json")
         self._schema_ok = False
+        # 启动防覆盖：本次同步前检测到启停文件被外部（官方启动器）改写过
+        self.last_sync_overwritten = False
 
     # ---- 基础
     def exists(self) -> bool:
@@ -1320,9 +1387,9 @@ class LauncherDB:
         except Exception:
             return set()
 
-    # ---- 游戏启停清单（CK3 等用 dlc_load.json，Vic3 用 content_load.json）
+    # ---- 游戏启停清单（CK3 等用 dlc_load.json，Vic3/EU5 用 content_load.json）
     def read_dlc_load(self) -> dict:
-        if self.game == "vic3":
+        if _uses_content_load(self.game):
             cl = self.read_content_load()
             return {
                 "disabled_dlcs": [
@@ -1508,7 +1575,7 @@ class LauncherDB:
     def sync_dlc_load(self, psid: str) -> str | None:
         """把播放集里启用的 mod 按 position 写入游戏启停清单（同一项保序去重）。
 
-        Vic3 写 content_load.json；其余游戏写 dlc_load.json。
+        Vic3/EU5 写 content_load.json；其余游戏写 dlc_load.json。
         disabled_dlcs 恒写空：CK3 1.20 引擎已忽略这个字段（无条件加载
         game/dlc/ 下所有 .dlc 文件），真正的 DLC 禁用靠改 .dlc 文件扩展名
         （set_dlc_file_state）。这里写空是为了和官方启动器/朗文保持一致。
@@ -1516,23 +1583,46 @@ class LauncherDB:
         ps = self.get_playset(psid)
         if not ps:
             return None
-        if self.game == "vic3":
-            return self._sync_content_load(ps)
-        mod_file_map = _mod_id_to_file_map(self)
-        enabled_mods: list[str] = []
-        seen: set = set()
-        for m in ps["mods"]:
-            if not m["enabled"]:
-                continue
-            f = mod_file_map.get(m["modId"])
-            if not f:
-                continue
-            k = f.lower()
-            if k in seen:      # 同一条 .mod 加载两次没有意义，去重
-                continue
-            seen.add(k)
-            enabled_mods.append(f)
-        return self.write_dlc_load(enabled_mods, [])
+        path = self.content_load_path if _uses_content_load(self.game) else self.dlc_load_path
+        # 启动防覆盖：写入前比对上次写下的指纹，判断是否被官方启动器改写过
+        prev = _load_sig_state()
+        cur_sha = _sha1_file(path) if os.path.isfile(path) else ""
+        self.last_sync_overwritten = bool(
+            prev.get("game") == self.game
+            and prev.get("path") == path
+            and prev.get("sha1")
+            and cur_sha
+            and prev.get("sha1") != cur_sha
+        )
+        if _uses_content_load(self.game):
+            bak = self._sync_content_load(ps)
+        else:
+            mod_file_map = _mod_id_to_file_map(self)
+            enabled_mods: list[str] = []
+            seen: set = set()
+            for m in ps["mods"]:
+                if not m["enabled"]:
+                    continue
+                f = mod_file_map.get(m["modId"])
+                if not f:
+                    continue
+                k = f.lower()
+                if k in seen:      # 同一条 .mod 加载两次没有意义，去重
+                    continue
+                seen.add(k)
+                enabled_mods.append(f)
+            bak = self.write_dlc_load(enabled_mods, [])
+            # EU4 引擎不认播放集顺序，开了强制排序时同步改写 .mod 的 name 前缀
+            if self.game == "eu4" and bak is not None:
+                try:
+                    if load_config("eu4").get("eu4ForceOrder"):
+                        self.apply_eu4_force_order(ps)
+                except Exception:
+                    pass
+        if bak is not None:
+            _save_load_sig_state({"game": self.game, "path": path,
+                                  "sha1": _sha1_file(path), "ts": int(time.time())})
+        return bak
 
     def _sync_content_load(self, ps: dict) -> str | None:
         """Vic3：按官方 1.1 格式写 content_load.json。
@@ -1580,6 +1670,63 @@ class LauncherDB:
 
         old = self.read_content_load()
         return self.write_content_load(enabled, disabled, old.get("enabledUGC") or [])
+
+    def apply_eu4_force_order(self, ps: dict) -> dict:
+        """EU4 专用：把播放集顺序写进各 .mod 的 name= 前缀。
+
+        EU4 引擎忽略播放集顺序，只按 name 的 UTF-8 排序加载且靠前覆盖靠后，
+        加「01 」前缀是唯一能让顺序真正生效的办法。原 name 备份到
+        eu4-force-order.json，可用 eu4_restore_forced_names() 一键还原。
+        """
+        if self.game != "eu4" or not self.user_dir:
+            return {"applied": 0, "skipped": 0}
+        mod_file_map = _mod_id_to_file_map(self)
+        ordered: list = []          # [(modFile, 绝对路径)]
+        seen: set = set()
+        for m in ps.get("mods") or []:
+            if not m.get("enabled"):
+                continue
+            f = mod_file_map.get(m.get("modId"))
+            if not f:
+                continue
+            key = f.lower()
+            if key in seen:
+                continue
+            full = os.path.join(self.user_dir, *f.replace("\\", "/").split("/"))
+            if not os.path.isfile(full):
+                continue
+            seen.add(key)
+            ordered.append((f, full))
+        if not ordered:
+            return {"applied": 0, "skipped": 0}
+
+        state = _load_eu4_force_state()
+        items = state.get("items") if isinstance(state.get("items"), dict) else {}
+        width = 2 if len(ordered) <= 99 else 3
+        applied = skipped = 0
+        for i, (mf, full) in enumerate(ordered, 1):
+            key = mf.lower()
+            cur = _read_mod_name(full)
+            rec = items.get(key) or {}
+            orig = str(rec.get("orig") or "").strip()
+            if not orig:
+                orig = _EU4_PREFIX_RE.sub("", cur).strip()
+            if not orig:
+                skipped += 1
+                continue
+            items[key] = {"file": full, "orig": orig}
+            want = "%0*d %s" % (width, i, orig)
+            if cur == want:
+                applied += 1
+                continue
+            if _write_mod_name(full, want):
+                applied += 1
+            else:
+                skipped += 1
+        state["userDir"] = self.user_dir
+        state["items"] = items
+        _save_eu4_force_state(state)
+        return {"applied": applied, "skipped": skipped}
 
     def set_active(self, psid: str) -> bool:
         backup_file(self.path, os.path.splitext(os.path.basename(self.path))[0])
@@ -2478,6 +2625,124 @@ def set_mod_alias(game: str, mod_file: str, alias: str) -> bool:
         g.pop(key, None)
     _save_mod_aliases(aliases)
     return True
+
+
+# ---------------------------------------------------------------- EU4 强制排序（改写 .mod 的 name）
+#
+# EU4 引擎不读启动器的播放集顺序，只按 .mod 里 name= 的 UTF-8 排序加载，
+# 且「名称靠前的覆盖靠后的」。所以要让排序真正生效，只能给 name 加序号前缀。
+# 原始 name 备份在 eu4-force-order.json，可一键还原。
+
+EU4_FORCE_STATE_PATH = os.path.join(APP_DIR, "eu4-force-order.json")
+_EU4_NAME_RE = re.compile(r'(^[ \t]*name[ \t]*=[ \t]*)"([^"]*)"', re.M)
+_EU4_NAME_BARE_RE = re.compile(r'(^[ \t]*name[ \t]*=[ \t]*)([^\s"#]+)', re.M)
+_EU4_PREFIX_RE = re.compile(r"^\d{2,3}[ _\-]+")
+
+
+def _read_mod_text(path: str) -> tuple:
+    """读 .mod 文本，返回 (文本, 是否带 BOM)。解码失败回退 latin-1。"""
+    with open(path, "rb") as f:
+        raw = f.read()
+    has_bom = raw.startswith(b"\xef\xbb\xbf")
+    if has_bom:
+        raw = raw[3:]
+    try:
+        return raw.decode("utf-8"), has_bom
+    except UnicodeDecodeError:
+        return raw.decode("latin-1"), has_bom
+
+
+def _write_mod_text(path: str, txt: str, has_bom: bool) -> bool:
+    data = (b"\xef\xbb\xbf" if has_bom else b"") + txt.encode("utf-8")
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+        return True
+    except Exception:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        return False
+
+
+def _read_mod_name(path: str) -> str:
+    try:
+        txt, _ = _read_mod_text(path)
+    except Exception:
+        return ""
+    m = _EU4_NAME_RE.search(txt) or _EU4_NAME_BARE_RE.search(txt)
+    return (m.group(2) if m else "").strip()
+
+
+def _write_mod_name(path: str, name: str) -> bool:
+    try:
+        txt, has_bom = _read_mod_text(path)
+    except Exception:
+        return False
+    if not txt:
+        return False
+    if _EU4_NAME_RE.search(txt):
+        new = _EU4_NAME_RE.sub(lambda m: m.group(1) + '"' + name + '"', txt, count=1)
+    elif _EU4_NAME_BARE_RE.search(txt):
+        new = _EU4_NAME_BARE_RE.sub(lambda m: m.group(1) + '"' + name + '"', txt, count=1)
+    else:
+        return False
+    if new == txt:
+        return True
+    return _write_mod_text(path, new, has_bom)
+
+
+def _load_eu4_force_state() -> dict:
+    try:
+        with open(EU4_FORCE_STATE_PATH, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_eu4_force_state(data: dict) -> None:
+    try:
+        with open(EU4_FORCE_STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def eu4_forced_count() -> int:
+    """当前被强制排序改过的 .mod 数量（用于界面显示）。"""
+    items = _load_eu4_force_state().get("items") or {}
+    return len(items) if isinstance(items, dict) else 0
+
+
+def eu4_restore_forced_names(user_dir: str = "") -> dict:
+    """把所有被强制排序改过的 .mod 的 name 还原，并清空备份。"""
+    state = _load_eu4_force_state()
+    items = state.get("items") if isinstance(state.get("items"), dict) else {}
+    restored = 0
+    remaining: dict = {}
+    for key, rec in items.items():
+        rec = rec or {}
+        full = str(rec.get("file") or "")
+        orig = str(rec.get("orig") or "")
+        if not full or not os.path.isfile(full):
+            continue
+        if _write_mod_name(full, orig):
+            restored += 1
+        else:
+            remaining[key] = rec
+    if remaining:
+        _save_eu4_force_state({"userDir": state.get("userDir") or user_dir,
+                               "items": remaining})
+    else:
+        try:
+            os.remove(EU4_FORCE_STATE_PATH)
+        except Exception:
+            pass
+    return {"restored": restored, "failed": len(remaining)}
 
 
 # ---------------------------------------------------------------- mod 来源（本地/工坊）手动覆盖
@@ -3602,6 +3867,9 @@ _HIGH_IMPACT = (
 # 元数据或缓存，原版与非原版都不会加载，当成"文件冲突"纯属误报噪声，必须剔除。
 _SKIP_DIRS = {".git", ".svn", ".hg", "__pycache__", ".idea", ".vscode", "node_modules"}
 
+# 每个模组自己都带的「身份证」文件：同名但不是真的抢文件，冲突检测要跳过
+_SKIP_SELF_FILES = {".metadata/metadata.json", "descriptor.mod", "thumbnail.png"}
+
 _CONFLICT_CACHE: dict = {}
 
 
@@ -3669,6 +3937,8 @@ def detect_mod_conflicts(cfg: dict, psid: str, progress_cb=None) -> dict:
                 for fn in files:
                     full = os.path.join(root, fn)
                     rel = os.path.relpath(full, dp).replace("\\", "/")
+                    if rel.lower() in _SKIP_SELF_FILES:
+                        continue
                     filemap.setdefault(rel, []).append((nm, pos, mid))
                     total_files += 1
                     if fn.endswith((".yml", ".yaml")):
@@ -3794,6 +4064,8 @@ def launch_game(cfg: dict, psid: str | None = None, debug: bool = False,
             db.set_active(target)
         else:
             db.sync_dlc_load(target)
+    # 启动防覆盖：官方启动器（Steam 启动路径）可能重写过启停文件，这里已重新写入
+    overwritten = bool(getattr(db, "last_sync_overwritten", False))
 
     args = [exe]
     for a in (launcher_settings(cfg).get("exeArgs") or []):
@@ -3806,7 +4078,7 @@ def launch_game(cfg: dict, psid: str | None = None, debug: bool = False,
         args.append("-debug_mode")
     try:
         subprocess.Popen(args, cwd=os.path.dirname(exe), close_fds=True)
-        return {"ok": True, "args": args}
+        return {"ok": True, "args": args, "overwritten": overwritten}
     except Exception as ex:
         return {"ok": False, "error": str(ex)}
 

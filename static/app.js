@@ -22,7 +22,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7.0.8';   // 与 make_release.py 的 VERSION 保持一致
+const LAUNCHER_VERSION = '1.7.0.9';   // 与 make_release.py 的 VERSION 保持一致
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -1750,18 +1750,18 @@ const GAME_SORT_RULES = {
   },
   vic3: {
     effect: '只能部分生效',
-    rule: '播放集顺序只对「同名文件」生效：靠下的后加载并覆盖靠上；不同文件名的解析还受文件名字母顺序影响，可能优先于播放集位置。',
-    tips: '汉化/兼容补丁放最下面并保持原文件名；进游戏发现覆盖不对时，先排查不同文件名的冲突，而不是继续拖顺序。',
+    rule: '启停文件是 content_load.json。不同文件名的模组一律按文件名的 ASCII 顺序加载，播放集顺序完全不参与；只有「同名且同路径」的文件，才由靠下的模组覆盖靠上的。GUI 的 type/template 反而先加载者优先（靠上的赢，方向相反）；本地化词条后加载者不覆盖，需放进 localization/<语言>/replace。',
+    tips: '想让排序起作用，只能让冲突文件同名同路径后再拖顺序；汉化放最下面并保持原文件名。覆盖不对时先查文件名冲突，别一直拖顺序。点「排序生效」可看到哪些文件真的受顺序影响。',
   },
   eu4: {
-    effect: '排序不改变覆盖',
-    rule: '启动器/播放集顺序不参与实际覆盖判定；引擎按 .mod 描述文件里的 name 字段排序（社区实测覆盖方向存在分歧）。排序只整理列表。',
-    tips: '想真正控制覆盖只能改 .mod 的 name，或只启用一个会冲突的 mod；不要指望拖顺序能解决覆盖问题。',
+    effect: '播放集顺序不生效',
+    rule: 'EU4 引擎完全忽略启动器的播放集顺序，只按 .mod 描述文件里 name= 的 UTF-8 排序加载，名称靠前的覆盖靠后的（数字、大写字母在前）。',
+    tips: '要让排序真正生效：点工具栏「排序生效」→ 开启「强制排序」，启动器会按播放集顺序给 name 加 01/02 前缀；不想用了在同一处一键还原。',
   },
   eu5: {
-    effect: '基本有效，需实测',
-    rule: '新一代引擎，播放集顺序对同名文件生效，但不同文件名的解析可能受文件名排序影响。',
-    tips: '先按推荐顺序排，再进游戏验证；覆盖异常时优先检查文件名冲突。',
+    effect: '只能部分生效',
+    rule: '与维多利亚 3 同为 content_load.json（1.1 格式）。不同文件名按文件名的 ASCII 顺序加载，播放集顺序不参与；同名同路径才靠下覆盖靠上；GUI type/template 先加载者优先；本地化需 localization/<语言>/replace。',
+    tips: '先按推荐顺序排，再进游戏验证；覆盖异常优先排查文件名冲突。EU5 的模组用 .metadata/metadata.json 描述，没有 .mod 文件。',
   },
   ck2: {
     effect: '排序有效',
@@ -1818,7 +1818,8 @@ function openAutoSortDialog() {
       <div class="modal conflict-panel">
         <div class="modal-head">自动排序 · ${esc(curName)}</div>
         <div class="modal-body sort-rule">
-          <div class="cf-notice">⚠ 自动排序是按社区经验整理的推荐顺序，仅供参考，不保证游戏内一定按此覆盖。</div>
+          <div class="cf-notice">⚠ 自动排序是按社区经验整理的推荐顺序，仅供参考，不保证游戏内一定按此覆盖。<br>
+            从 Steam 启动会被官方启动器用它自己的活跃播放集重写启停文件，请用人联启动器直接启动。</div>
           <div class="cf-summary">
             <b>分层规则：</b>前置/框架/库 → 大型改模 → 普通模组 → 兼容补丁 → 汉化/翻译；同层再按名称排序（中文按拼音）。<br>
             <b>识别方式：</b>按模组名称关键词分组，未命中的一律按普通模组处理。<br>
@@ -1917,7 +1918,138 @@ async function applyAutoSort() {
   S.play.sort(autoSortCompare);
   paintLists();
   scheduleSave();
-  toast(TT('已按推荐规则重排，请进游戏验证生效情况'), 'ok');
+  toast(TT('已按推荐规则重排；EU4 若已开启强制排序，本次重排会同步写入 name 前缀'), 'ok');
+}
+
+/* 排序生效分析：Vic3/EU5 看「同名同路径」冲突，EU4 提供强制排序开关 */
+async function openOrderEffectModal() {
+  const id = S.state.activePlayset || ((S.state.playsets || [])[0] || {}).id;
+  if (!id) { toast(TT('当前没有激活的播放集'), 'err'); return; }
+  const game = S.state.currentGame || 'ck3';
+  const rule = gameSortRule(game);
+  const curName = gameLabel((S.state.gameDefs || {})[game]) || game;
+
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.innerHTML = `
+    <div class="modal conflict-panel">
+      <div class="modal-head">排序生效 · ${esc(curName)}</div>
+      <div class="modal-body sort-rule">
+        <div class="cf-notice">⚠ 结论由引擎规则 + 当前播放集文件扫描得出，仅供参考。</div>
+        <div class="cf-sec">
+          <div class="cf-sec-t">当前播放集的排序效果</div>
+          <div id="oeScan" class="cf-summary">${esc(TT('正在扫描启用的模组…'))}</div>
+        </div>
+        <details class="sr-row cur" style="margin-top:12px">
+          <summary style="cursor:pointer"><b>引擎规则与建议（想看原理再点开）</b></summary>
+          <div style="margin-top:8px"><b>规则：</b>${esc(rule.rule)}</div>
+          <div><b>建议：</b>${esc(rule.tips)}</div>
+        </details>
+        <div class="cf-sec" id="oeEu4Sec" style="display:none">
+          <div class="cf-sec-t">EU4 强制排序 <span class="cf-hint">改写 .mod 的 name 前缀，可一键还原</span></div>
+          <div id="oeEu4"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-m="close">${esc(TT('关闭'))}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(mask);
+  requestAnimationFrame(() => mask.classList.add('show'));
+  const close = () => { mask.classList.remove('show'); setTimeout(() => mask.remove(), 130); };
+  mask.querySelector('[data-m="close"]').onclick = close;
+  mask.addEventListener('mousedown', e => { if (e.target === mask) close(); });
+
+  const scanEl = mask.querySelector('#oeScan');
+  let res = null;
+  try {
+    res = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve(null), 120000);
+      fetchConflictStream(id,
+        (s, t) => { if (scanEl) scanEl.textContent = `${TT('已扫描')} ${s} / ${t}`; },
+        (r) => { clearTimeout(timer); resolve(r); }
+      ).catch(e => { clearTimeout(timer); reject(e); });
+    });
+  } catch (e) {
+    if (scanEl) scanEl.textContent = TT('扫描失败：') + (e && e.message ? e.message : '');
+    return;
+  }
+  if (!scanEl) return;
+
+  const conflicts = (res && res.fileConflicts) || [];
+  const help = `<div class="cf-hint" style="line-height:1.8;margin:10px 0 12px">
+      <b>怎么看这个表：</b><br>
+      · <b>生效</b>：最后真正被游戏读到的那个模组<br>
+      · <b>被覆盖</b>：被上面那个盖掉、白加载的模组<br>
+      · 想让谁赢，就把它<b>往下拖</b>（越靠下越优先）<br>
+      · 名单里没有的模组，跟别人不抢文件，怎么拖都没用
+    </div>`;
+
+  if (!res || !res.ok) {
+    scanEl.innerHTML = esc(TT('扫描失败：') + ((res && res.error) || ''));
+  } else if (game === 'eu4') {
+    scanEl.innerHTML = `<div class="cf-notice" style="margin-bottom:10px">EU4 引擎<b>不读</b>这里的拖动顺序，怎么排都一样，想生效请用下面的「强制排序」。</div>
+      <div>本次扫描 ${res.scannedMods || 0} 个模组、${res.totalFiles || 0} 个文件。</div>`;
+  } else if (!conflicts.length) {
+    scanEl.innerHTML = `<div class="cf-notice" style="margin-bottom:10px">✅ <b>排序完全没影响。</b>当前模组之间没有共用同一个文件，怎么拖进游戏都一样。</div>
+      ${help}`;
+  } else {
+    // 按模组汇总：生效几个文件、被覆盖几个文件
+    const involved = new Map();
+    const bump = (n, k) => {
+      if (!involved.has(n)) involved.set(n, { win: 0, lose: 0 });
+      involved.get(n)[k]++;
+    };
+    conflicts.forEach(c => {
+      bump(c.winner, 'win');
+      (c.losers || []).forEach(n => bump(n, 'lose'));
+    });
+    const list = [...involved.entries()]
+      .sort((a, b) => (b[1].lose - a[1].lose) || (b[1].win - a[1].win))
+      .map(([n, c]) => `<div class="sr-row"><div><b>${esc(n)}</b></div>
+        <div>生效 ${c.win} 个文件 · 被覆盖 ${c.lose} 个文件</div></div>`).join('');
+    const rows = conflicts.slice(0, 20).map(c =>
+      `<div class="sr-row"><div><b>${esc(c.rel)}</b></div>
+        <div>生效：<b>${esc(c.winner)}</b>（靠下优先）</div>
+        <div>被覆盖：${esc((c.losers || []).join('、'))}</div></div>`).join('');
+    scanEl.innerHTML = `
+      <div class="cf-notice" style="margin-bottom:6px">⚠ 只有 <b>${conflicts.length}</b> 个文件被多个模组同时包含 —— 排序只对下面这些模组有效，其余模组拖顺序没用。</div>
+      ${help}
+      <div class="cf-sec-t">受顺序影响的模组名单（共 ${involved.size} 个）</div>
+      ${list}
+      <div class="cf-sec-t" style="margin-top:14px">具体冲突文件（前 20 条）</div>
+      ${rows}
+      ${conflicts.length > 20 ? `<div class="cf-hint">仅显示前 20 条，完整列表见「冲突排查」。</div>` : ''}`;
+  }
+
+  if (game === 'eu4') {
+    const sec = mask.querySelector('#oeEu4Sec');
+    const box = mask.querySelector('#oeEu4');
+    sec.style.display = '';
+    const paintEu4 = async () => {
+      const st = await api('/api/eu4/force-order');
+      box.innerHTML = `
+        <div>当前状态：<b>${st.enabled ? '已开启' : '未开启'}</b>，已改写 ${st.count || 0} 个 .mod 的 name。</div>
+        <div class="bar" style="margin-top:10px">
+          <button class="btn sm ${st.enabled ? 'ghost' : 'primary'}" data-eo="on"${st.enabled ? ' disabled' : ''}>开启强制排序</button>
+          <button class="btn sm ghost" data-eo="off"${st.count ? '' : ' disabled'}>一键还原</button>
+        </div>
+        <div class="cf-hint" style="margin-top:8px">开启后按播放集顺序改写 name（01/02… 前缀）。原始 name 已备份，可随时还原；游戏内模组名会带前缀，联机前建议先还原。</div>`;
+      box.querySelectorAll('[data-eo]').forEach(btn => {
+        btn.onclick = async () => {
+          const on = btn.dataset.eo === 'on';
+          btn.disabled = true;
+          const r = await post('/api/eu4/force-order',
+            on ? { enabled: true } : { enabled: false, restore: true });
+          if (!r.ok) { toast(r.error || '操作失败', 'err'); btn.disabled = false; return; }
+          toast(on ? `已按播放集顺序改写 ${r.applied || 0} 个 .mod`
+                   : `已还原 ${r.restored || 0} 个 .mod 的原名`, 'ok');
+          await paintEu4();
+        };
+      });
+    };
+    paintEu4().catch(() => {});
+  }
 }
 
 /* ---------------- MOD 管理（核心） ---------------- */
@@ -1952,6 +2084,7 @@ async function renderMods() {
         <button class="btn sm ghost" id="mRev">反转顺序</button>
         <button class="btn sm ghost" id="mConflicts" title="检查当前播放集里启用的模组之间有无文件/本地化/依赖冲突">${TT('冲突排查')}</button>
         <button class="btn sm ghost" id="mAutoSort" title="按游戏推荐规则自动重排当前播放集（先说明覆盖规则与技巧，仅供参考）">自动排序</button>
+        <button class="btn sm ghost" id="mOrderEffect" title="查看当前排序在引擎里是否真的生效；EU4 可开启强制排序"${['vic3', 'eu5', 'eu4'].includes(S.state.currentGame) ? '' : ' style="display:none"'}>排序生效</button>
         <button class="btn sm ghost" id="mExport" title="把当前播放集导出为 JSON 文件">导出播放集</button>
         <button class="btn sm ghost" id="mImportPs" title="从 JSON 文件导入播放集，本地缺失的工坊模组会自动订阅">导入播放集</button>
         <button class="btn sm ghost" id="mImportZip" title="选择压缩包安装本地 Mod（也可以直接把压缩包拖进窗口）">导入 Mod</button>
@@ -2035,6 +2168,7 @@ async function renderMods() {
   $('#mRev').onclick = () => { S.play.reverse(); paintLists(); scheduleSave(); };
   $('#mConflicts').onclick = openConflictModal;
   $('#mAutoSort').onclick = applyAutoSort;
+  { const oe = $('#mOrderEffect'); if (oe) oe.onclick = openOrderEffectModal; }
   $('#mAllOn').onclick = () => { S.play.forEach(x => x.enabled = true); paintLists(); scheduleSave(); };
   $('#mAllOff').onclick = () => { S.play.forEach(x => x.enabled = false); paintLists(); scheduleSave(); };
 
@@ -4778,6 +4912,12 @@ async function renderSettings() {
         <div class="val"><input type="text" id="cWork" value="${esc(c.workshopDir || '')}" placeholder="steamapps\\workshop\\content\\1158310">
         <button class="btn sm ghost" data-pick="cWork">${esc(T('common.browse'))}</button>
         <button class="btn sm ghost" data-openpath="cWork">${esc(T('common.open'))}</button></div></div>
+      <div class="form-row"><div class="lab">${esc(T('settings.cacheDir'))}</div>
+        <div class="val"><input type="text" id="cCache" value="${esc(c.cacheDir || '')}" placeholder="${esc(T('settings.cacheDirPh'))}">
+        <button class="btn sm ghost" data-pick="cCache">${esc(T('common.browse'))}</button>
+        <button class="btn sm ghost" data-openpath="cCache">${esc(T('common.open'))}</button></div>
+        <div class="hint" style="margin:6px 0 0 0;line-height:1.6">${esc(T('settings.cacheDirHint'))}
+          <br>${esc(T('settings.current'))} <b style="color:var(--gold-b);word-break:break-all">${esc(st.cacheDir || '')}</b></div></div>
       <div class="form-row"><div class="lab">${esc(T('settings.gameVersion'))}</div>
         <div class="val"><input type="text" id="cVer" value="${esc(c.gameVersion || st.version || '')}" style="max-width:110px" placeholder="${esc(T('settings.gameVersionPh'))}">
         <button class="btn sm ghost" id="cVerSync">${esc(T('settings.syncVersion'))}</button>
@@ -4862,8 +5002,13 @@ async function renderSettings() {
     const r = await post('/api/pick-dir', { initial: $('#' + id).value });
     if (r.path) $('#' + id).value = r.path;
   });
-  $$('[data-openpath]').forEach(b => b.onclick = () =>
-    post('/api/open', { path: $('#' + b.dataset.openpath).value }));
+  $$('[data-openpath]').forEach(b => b.onclick = () => {
+    // 缓存目录留空表示跟随程序目录，这时直接打开实际使用的目录
+    let v = $('#' + b.dataset.openpath).value;
+    if (!v && b.dataset.openpath === 'cCache') v = st.cacheDir || '';
+    if (!v) { toast(TT('请先填写或选择目录'), 'err'); return; }
+    post('/api/open', { path: v });
+  });
   $$('[data-raw]').forEach(b => b.onclick = () => post('/api/open', { path: b.dataset.raw }));
   $$('[data-dir]').forEach(b => b.onclick = async () => {
     const d = b.dataset.dir;
@@ -4899,6 +5044,7 @@ async function renderSettings() {
       r = await post('/api/config', {
         gameRoot: $('#cGame').value, userDir: $('#cUser').value,
         workshopDir: $('#cWork').value, gameVersion: gv || realVer,
+        cacheDir: $('#cCache') ? $('#cCache').value : undefined,
       });
     } catch (e) {
       toast('保存失败：无法写入配置文件', 'err');
@@ -5020,6 +5166,9 @@ async function doLaunch(psid) {
   const r = await post('/api/launch', { psid });
   if (r.ok) {
     toast('游戏已启动，本启动器可以关掉了', 'ok');
+    if (r.overwritten) {
+      toast('检测到官方启动器改写过启停文件，已按人联播放集重新写入', 'ok');
+    }
     saveState('游戏运行中');
     const cfg = S.state.config || {};
     // 等游戏进程真正起来再动手，免得把启动流程打断

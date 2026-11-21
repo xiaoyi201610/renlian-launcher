@@ -213,7 +213,7 @@ _GLOBAL_MEM: dict[str, dict] = {}
 
 
 def _global_cache_path(appid: str) -> str:
-    return os.path.join(core.APP_DIR, "achievement_global_%s.json" % appid)
+    return os.path.join(core.cache_dir(), "achievement_global_%s.json" % appid)
 
 
 def load_global_percent(appid: str, max_age: int = 86400) -> dict[str, float]:
@@ -271,7 +271,7 @@ CACHE_VERSION = 2      # 结构变动时 +1，旧缓存自动失效重算
 
 
 def _data_cache_path(appid: str) -> str:
-    return os.path.join(core.APP_DIR, "achievement_data_%s.json" % appid)
+    return os.path.join(core.cache_dir(), "achievement_data_%s.json" % appid)
 
 
 def read_data_cache(appid: str) -> dict | None:
@@ -310,7 +310,7 @@ def icon_url(appid: str, h: str) -> str:
 # 浏览器显示不了 DDS，所以按需转成 PNG 缓存到启动器目录，之后直接读缓存。
 
 def _icon_cache_dir(appid: str) -> str:
-    d = os.path.join(core.APP_DIR, "achievement_icons", appid)
+    d = os.path.join(core.cache_dir(), "achievement_icons", appid)
     os.makedirs(d, exist_ok=True)
     return d
 

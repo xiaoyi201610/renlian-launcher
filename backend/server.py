@@ -13,6 +13,7 @@ import io
 import json
 import time
 import shutil
+import hashlib
 import mimetypes
 import threading
 import traceback
@@ -95,8 +96,8 @@ def api_consistency() -> dict:
         return {"ok": True, "psid": None, "extra": [], "missing": [], "orderDiff": False}
     id2f = core._mod_id_to_file_map(db)
     CTX.mods()
-    if CTX.game == "vic3":
-        # Vic3 的 content_load.json 存的是 mod 绝对目录，不是 mod/xxx.mod
+    if core._uses_content_load(CTX.game):
+        # Vic3/EU5 的 content_load.json 存的是 mod 绝对目录，不是 mod/xxx.mod
         recs = {os.path.normcase(os.path.abspath(r["dirPath"])): r
                 for r in db.mod_records() if (r.get("dirPath") or "").strip()}
         want, seen = [], set()
@@ -246,6 +247,8 @@ def api_state() -> dict:
         "browserModUrl": settings.get("browserModUrl") or f"https://steamcommunity.com/app/{_cur_appid()}/workshop/",
         "browserDlcUrl": settings.get("browserDlcUrl") or f"https://store.steampowered.com/dlc/{_cur_appid()}/",
         "backupDir": core.BACKUP_DIR,
+        "cacheDir": core.cache_dir(),
+        "cacheDirDefault": core.APP_DIR,
         "pathIssues": _path_issues(cfg),
     }
 
@@ -582,7 +585,7 @@ _DLC_CACHE_VER = 3
 
 
 def _dlc_cache_path(game: str) -> str:
-    return os.path.join(APP_DIR, "dlc_data_%s.json" % game)
+    return os.path.join(core.cache_dir(), "dlc_data_%s.json" % game)
 
 
 def _dlc_names_path() -> str:
@@ -768,7 +771,7 @@ _dlc_detail_loaded = False
 
 
 def _detail_cache_path() -> str:
-    return os.path.join(APP_DIR, "dlc_detail_cache.json")
+    return os.path.join(core.cache_dir(), "dlc_detail_cache.json")
 
 
 def _load_detail_cache() -> None:
@@ -892,8 +895,8 @@ def api_set_dlcs(payload: dict) -> dict:
         items.append({"modId": i["modId"], "enabled": i["enabled"], "rec": None})
     res = db.write_playset(psid, items, merged)
 
-    if CTX.game == "vic3":
-        # Vic3 的 DLC 开关走 content_load.json 的 disabledDLC，
+    if core._uses_content_load(CTX.game):
+        # Vic3/EU5 的 DLC 开关走 content_load.json 的 disabledDLC，
         # 不改 .dlc 扩展名（那是 CK3 等旧引擎的做法）。
         return {
             "ok": True,
@@ -960,8 +963,8 @@ def api_dlc_verify(psid: str | None = None) -> dict:
     game_root = CTX.cfg.get("gameRoot") or ""
     game = CTX.game
 
-    if game == "vic3":
-        # Vic3 不改 .dlc 文件，真实状态看 content_load.json 的 disabledDLC
+    if core._uses_content_load(game):
+        # Vic3/EU5 不改 .dlc 文件，真实状态看 content_load.json 的 disabledDLC
         items = []
         mismatches = []
         for d in core.list_dlcs(CTX.cfg):
@@ -1066,7 +1069,7 @@ def api_open_statistics() -> dict:
             "saves": os.path.join(cfg.get("userDir") or "", "save games"),
             "logs": os.path.join(cfg.get("userDir") or "", "logs"),
             "dlcLoad": os.path.join(cfg.get("userDir") or "",
-                                    "content_load.json" if CTX.game == "vic3" else "dlc_load.json"),
+                                    "content_load.json" if core._uses_content_load(CTX.game) else "dlc_load.json"),
             "sqlite": CTX.db().path,
             "gameData": os.path.join(cfg.get("gameRoot") or "", "game"),
             "common": os.path.join(cfg.get("gameRoot") or "", "game", "common"),
@@ -1093,7 +1096,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        # 调用方显式给了 Cache-Control 就不要再补 no-store：两个头并存时浏览器按
+        # no-store 处理，图片等静态资源会每次全量重下，列表重绘就明显卡顿。
+        if not (extra and "Cache-Control" in extra):
+            self.send_header("Cache-Control", "no-store")
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
@@ -1107,6 +1113,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def _file(self, path: str, ctype: str | None = None):
         try:
+            st = os.stat(path)
+        except Exception:
+            self._send(404, b"not found", "text/plain")
+            return
+        # 「修改时间 + 大小」做 ETag：文件一变标签就变，升级后也不会命中旧缓存
+        etag = '"%x-%x"' % (st.st_mtime_ns, st.st_size)
+        is_code = path.lower().endswith((".js", ".css", ".html"))
+        cc = "no-cache" if is_code else "public, max-age=3600"
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", cc)
+            self.end_headers()
+            return
+        try:
             with open(path, "rb") as f:
                 data = f.read()
         except Exception:
@@ -1119,10 +1140,37 @@ class Handler(BaseHTTPRequestHandler):
             ct = "text/css; charset=utf-8"
         elif path.lower().endswith(".html"):
             ct = "text/html; charset=utf-8"
-        # 代码与样式用 no-store：升级启动器后同名文件会命中旧缓存，
-        # 导致改了 CSS / JS 却看不到效果（本地服务，重下的代价可以忽略）
-        cc = "no-store" if path.lower().endswith((".js", ".css", ".html")) else "no-cache"
-        self._send(200, data, ct, {"Cache-Control": cc})
+        # 代码与样式走协商缓存：只回 304，文件改了 ETag 变化立刻生效；
+        # 图片（模组封面、百科图标）缓存 1 小时，避免每次重绘都重读几十 MB。
+        self._send(200, data, ct, {"Cache-Control": cc, "ETag": etag})
+
+    def _thumb(self, path: str):
+        """列表里只有 40px 的头像，原图动辄 1MB，先压成小图并落盘缓存，
+        否则一页几十个模组要读十几 MB 原图，滚动和切页都会卡。"""
+        try:
+            st = os.stat(path)
+        except Exception:
+            self._send(404, b"", "image/png")
+            return
+        key = hashlib.md5(("%s|%d|%d" % (path.lower(), st.st_mtime_ns, st.st_size))
+                          .encode("utf-8")).hexdigest()
+        out = os.path.join(core.cache_dir(), "thumb_cache", key + ".jpg")
+        if os.path.isfile(out):
+            self._file(out, "image/jpeg")
+            return
+        try:
+            from PIL import Image
+            with Image.open(path) as im:
+                im = im.convert("RGB")
+                im.thumbnail((160, 160), Image.LANCZOS)
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                tmp = out + ".tmp"
+                im.save(tmp, "JPEG", quality=82)
+            os.replace(tmp, out)
+            self._file(out, "image/jpeg")
+        except Exception:
+            # 转不了的格式（如 DDS）就直接给原文件，保持原有行为
+            self._file(path)
 
     def _path_ok(self, p: str) -> bool:
         """限制可读取的绝对路径范围，避免任意文件读取。"""
@@ -1281,7 +1329,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/thumb":
                 fp = q.get("p") or ""
                 if fp and self._path_ok(fp) and os.path.isfile(fp):
-                    self._file(fp)
+                    self._thumb(fp)
                 else:
                     self._send(404, b"", "image/png")
                 return
@@ -1290,6 +1338,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if p == "/api/consistency":
                 self._json(api_consistency())
+                return
+            if p == "/api/eu4/force-order":
+                self._json({"ok": True,
+                            "enabled": bool(CTX.cfg.get("eu4ForceOrder")),
+                            "count": core.eu4_forced_count()})
                 return
             if p == "/api/mem":
                 self._json(core.memory_info())
@@ -1538,6 +1591,33 @@ class Handler(BaseHTTPRequestHandler):
                 )); return
             if p == "/api/launch-official":
                 self._json(core.launch_official_launcher(CTX.cfg)); return
+            if p == "/api/eu4/force-order":
+                # EU4 强制排序：{enabled:true} 开启并立即改写；{enabled:false} 或 {restore:true} 还原
+                enabled = bool(body.get("enabled"))
+                restore = bool(body.get("restore"))
+                cfg = dict(CTX.cfg)
+                cfg["eu4ForceOrder"] = enabled
+                try:
+                    core.save_config(cfg)
+                except Exception as e:
+                    self._json({"ok": False, "error": "配置写入失败：%s" % e}); return
+                CTX.reload_cfg()
+                if restore or not enabled:
+                    r = core.eu4_restore_forced_names(CTX.cfg.get("userDir") or "")
+                    self._json({"ok": True, "enabled": False,
+                                "restored": r.get("restored", 0),
+                                "failed": r.get("failed", 0)}); return
+                db = CTX.db()
+                psid = db.active_playset() or next(
+                    (x["id"] for x in db.list_playsets()), None)
+                ps = db.get_playset(psid) if psid else None
+                if not ps:
+                    self._json({"ok": False, "enabled": True,
+                                "error": "没有可用的播放集"}); return
+                r = db.apply_eu4_force_order(ps)
+                self._json({"ok": True, "enabled": True,
+                            "applied": r.get("applied", 0),
+                            "skipped": r.get("skipped", 0)}); return
             if p == "/api/url":
                 url = body.get("url") or ""
                 if url.startswith("http"):
@@ -1652,9 +1732,24 @@ class Handler(BaseHTTPRequestHandler):
                 if "updateUrl" in body:
                     cfg["updateUrl"] = (body["updateUrl"] or "").strip()
                 for k in ("autoBackup", "rememberLastPlayset",
-                          "minimizeOnLaunch", "closeOnLaunch", "useDataPathArg"):
+                          "minimizeOnLaunch", "closeOnLaunch", "useDataPathArg",
+                          "eu4ForceOrder"):
                     if k in body:
                         cfg[k] = bool(body[k])
+
+                # 缓存目录：留空=跟随程序目录；填了就当场验证能否创建/写入，避免保存后才发现不可用
+                if "cacheDir" in body:
+                    cd = _clean_path(body["cacheDir"])
+                    if cd:
+                        try:
+                            os.makedirs(cd, exist_ok=True)
+                        except Exception as e:
+                            self._json({"ok": False,
+                                        "error": f"缓存目录无法创建：{cd}（{e}）"}); return
+                        if not os.access(cd, os.W_OK):
+                            self._json({"ok": False,
+                                        "error": f"缓存目录没有写入权限：{cd}"}); return
+                    cfg["cacheDir"] = cd
 
                 warnings = []
                 for k, label in (("gameRoot", "游戏根目录"),

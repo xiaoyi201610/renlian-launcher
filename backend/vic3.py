@@ -116,6 +116,11 @@ MOD_ALIAS = {
 }
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+try:                                    # 缓存目录可自定义，取不到就跟随程序目录
+    from ck3core import cache_dir
+except Exception:
+    def cache_dir():
+        return APP_DIR
 
 
 # ----------------------------------------------------------------- 基础工具
@@ -169,11 +174,11 @@ def _game_version(root):
 
 
 def _cache_path(loc_lang):
-    return os.path.join(APP_DIR, "wiki_cache_vic3_%s.json" % loc_lang)
+    return os.path.join(cache_dir(), "wiki_cache_vic3_%s.json" % loc_lang)
 
 
 def _icon_dir():
-    d = os.path.join(APP_DIR, "vic3_law_icons")
+    d = os.path.join(cache_dir(), "vic3_law_icons")
     if not os.path.isdir(d):
         try:
             os.makedirs(d)

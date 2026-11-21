@@ -24,10 +24,12 @@ import glob
 import time
 import threading
 
-try:                                    # 缓存放程序目录，和 dlc_data_*.json 等保持一致
-    from ck3core import APP_DIR
+try:                                    # 缓存目录可在设置里改到别的盘，默认程序目录
+    from ck3core import APP_DIR, cache_dir
 except Exception:                       # 单独跑测试时兜底
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    def cache_dir():
+        return APP_DIR
 
 import stellaris                        # 群星百科（独立模块，按 game 分派）
 import hoi4                             # 钢铁雄心百科（独立模块，按 game 分派）
@@ -1641,7 +1643,7 @@ def _sig(paths) -> str:
 
 
 def _cache_path(game: str, loc_lang: str) -> str:
-    return os.path.join(APP_DIR, "wiki_cache_%s_%s.json" % (game, loc_lang))
+    return os.path.join(cache_dir(), "wiki_cache_%s_%s.json" % (game, loc_lang))
 
 
 def focus_tree(game: str, game_root: str, tid: str, ui_lang: str = "zh") -> dict:

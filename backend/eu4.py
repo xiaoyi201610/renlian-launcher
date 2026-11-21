@@ -12,9 +12,11 @@ import threading
 import time
 
 try:
-    from paths import APP_DIR
+    from ck3core import APP_DIR, cache_dir
 except Exception:
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    def cache_dir():
+        return APP_DIR
 
 EU4_VER = 8
 _LOCK = threading.RLock()
@@ -1598,7 +1600,7 @@ def _sig(root, loc_lang, mod_dirs=None):
 
 
 def _cache_path(tag):
-    return os.path.join(APP_DIR, "wiki_cache_eu4_%s.json" % (tag or "english"))
+    return os.path.join(cache_dir(), "wiki_cache_eu4_%s.json" % (tag or "english"))
 
 
 def _build(root, loc_lang, zh, mod_dirs=None):
@@ -1734,7 +1736,7 @@ def mission_icon_png(game_root, gfx_name):
     if not root or not gfx_name:
         return ""
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", gfx_name)[:120]
-    outdir = os.path.join(APP_DIR, "eu4_mission_icons")
+    outdir = os.path.join(cache_dir(), "eu4_mission_icons")
     png = os.path.join(outdir, safe + ".png")
     if os.path.isfile(png):
         return png

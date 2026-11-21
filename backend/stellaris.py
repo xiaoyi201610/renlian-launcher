@@ -26,9 +26,11 @@ import time
 import threading
 
 try:
-    from ck3core import APP_DIR
+    from ck3core import APP_DIR, cache_dir
 except Exception:
     APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    def cache_dir():
+        return APP_DIR
 
 SL_VER = 10                     # 解析逻辑变更时 +1，强制重建缓存
 
@@ -1277,7 +1279,7 @@ def _sig(dirs) -> str:
 
 
 def _cache_path(loc_lang: str) -> str:
-    return os.path.join(APP_DIR, "wiki_cache_stellaris_%s.json" % loc_lang)
+    return os.path.join(cache_dir(), "wiki_cache_stellaris_%s.json" % loc_lang)
 
 
 def game_root_of(hint: str = "") -> str:
