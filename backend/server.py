@@ -1750,7 +1750,6 @@ class Handler(BaseHTTPRequestHandler):
                             self._json({"ok": False,
                                         "error": f"缓存目录没有写入权限：{cd}"}); return
                     cfg["cacheDir"] = cd
-
                 warnings = []
                 for k, label in (("gameRoot", "游戏根目录"),
                                  ("userDir", "用户数据目录"),
