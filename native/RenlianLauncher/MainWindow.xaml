@@ -1,0 +1,131 @@
+<Window x:Class="RenlianLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="人联启动器" Background="#0A0E13"
+        WindowStartupLocation="CenterScreen"
+        MinWidth="1080" MinHeight="680">
+    <Window.Resources>
+        <Style x:Key="WsBtn" TargetType="Button">
+            <Setter Property="Padding" Value="9,5"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="Background" Value="#2A475E"/>
+            <Setter Property="BorderBrush" Value="#3D6480"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="#C7D5E0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style x:Key="WsPrimary" TargetType="Button" BasedOn="{StaticResource WsBtn}">
+            <Setter Property="Background" Value="#1A9FFF"/>
+            <Setter Property="BorderBrush" Value="#1A9FFF"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+    </Window.Resources>
+    <Grid>
+        <wv2:WebView2 x:Name="Web" DefaultBackgroundColor="#0A0E13" />
+
+        <!-- 内嵌 Steam 创意工坊：左侧 Steam 官网原生页面（深色） + 右侧本机已订阅列表 -->
+        <Grid x:Name="WorkshopPanel" Visibility="Collapsed" Background="#1B2838">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="44" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="#1B2838" BorderBrush="#2A475E" BorderThickness="0,0,0,1">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0">
+                    <Button x:Name="WsBack" Content="返回启动器" Style="{StaticResource WsPrimary}" />
+                    <Button x:Name="WsHome" Content="工坊首页" Style="{StaticResource WsBtn}" />
+                    <Button x:Name="WsNavBack" Content="←" Style="{StaticResource WsBtn}" ToolTip="返回上一页" />
+                    <Button x:Name="WsRefresh" Content="刷新" Style="{StaticResource WsBtn}" />
+                    <TextBox x:Name="WsQuery" Width="230" Height="28" VerticalContentAlignment="Center"
+                             Margin="0,0,6,0" FontSize="12" Padding="7,0"
+                             Background="#16202D" Foreground="#C7D5E0" BorderBrush="#3D6480"
+                             ToolTip="搜索 MOD 名称或创意工坊 ID" />
+                    <Button x:Name="WsSearch" Content="搜索" Style="{StaticResource WsBtn}" />
+                    <Rectangle Width="1" Fill="#2A475E" Margin="4,6,10,6" />
+                    <Button x:Name="WsUpload" Content="上传本地 Mod" Style="{StaticResource WsBtn}" />
+                    <Button x:Name="WsSteamOpen" Content="用 Steam 打开" Style="{StaticResource WsBtn}" />
+                    <TextBlock x:Name="WsTitle" Text="Steam 创意工坊" VerticalAlignment="Center"
+                               Foreground="#C7D5E0" FontSize="12" Margin="8,0,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="252" />
+                </Grid.ColumnDefinitions>
+
+                <wv2:WebView2 x:Name="WorkshopWeb" Grid.Column="0" DefaultBackgroundColor="#1B2838" />
+
+                <Border Grid.Column="1" Background="#16202D" BorderBrush="#2A475E" BorderThickness="1,0,0,0">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top" Margin="10,10,10,6">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="已订阅 MOD" FontSize="13" FontWeight="SemiBold" Foreground="#C7D5E0" />
+                                <TextBlock x:Name="WsCnt" Text="0" Margin="7,1,0,0" FontSize="12" Foreground="#7F96AD" />
+                            </StackPanel>
+                            <TextBox x:Name="WsLocalSearch" Height="28" VerticalContentAlignment="Center"
+                                     FontSize="12" Padding="7,0" ToolTip="搜索名称或 ID"
+                                     Background="#1B2838" Foreground="#C7D5E0" BorderBrush="#3D6480" />
+                            <Button x:Name="WsCheck" Content="检查更新" Style="{StaticResource WsBtn}" Margin="0,8,0,0" />
+                        </StackPanel>
+                        <ListView x:Name="WsSubscribedList" Background="Transparent" BorderThickness="0"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                  SelectionMode="Single" Padding="4,0">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Padding" Value="6,7"/>
+                                    <Setter Property="Margin" Value="0,0,0,2"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderBrush" Value="#24384C"/>
+                                    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                    <Setter Property="Cursor" Value="Hand"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListViewItem">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter />
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#24384C"/>
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Background" Value="#1A4A6E"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Tag="{Binding SteamId}">
+                                        <Border Width="38" Height="38" Background="#2A475E" CornerRadius="3"
+                                                Margin="0,0,8,0" VerticalAlignment="Center">
+                                            <Image Source="{Binding Thumb}" Stretch="UniformToFill" />
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center" Width="170">
+                                            <TextBlock Text="{Binding Name}" FontSize="12" Foreground="#C7D5E0"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" />
+                                            <TextBlock Text="{Binding Sub}" FontSize="10.5" Foreground="#7F96AD"
+                                                       TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </DockPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

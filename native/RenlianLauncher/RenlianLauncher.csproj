@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>人联启动器</AssemblyName>
+    <RootNamespace>RenlianLauncher</RootNamespace>
+    <ApplicationIcon>wwwroot\icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.7.2.7</Version>
+    <FileVersion>1.7.2.7</FileVersion>
+    <AssemblyVersion>1.7.2.7</AssemblyVersion>
+    <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Steamworks.NET" Version="2024.8.0" />
+    <!-- Steam 官方 redist steam_api64.dll（SDK 1.60+，取自 Valve 再分发；DRM 游戏目录的包装版会导致崩溃） -->
+    <None Include="native\steam_api64.dll" CopyToOutputDirectory="PreserveNewest" Link="steam_api64.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Resources\dlc_data.json" LogicalName="RenlianLauncher.Resources.dlc_data.json" />
+  </ItemGroup>
+
+</Project>

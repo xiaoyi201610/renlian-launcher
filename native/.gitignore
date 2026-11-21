@@ -1,0 +1,9 @@
+# 构建产物与运行时数据，不入库
+**/bin/
+**/obj/
+RenlianLauncher/publish/
+RenlianLauncher/release/
+RenlianLauncher/RenlianData/
+RenlianLauncher/tmp_publish*/
+dist/
+*.user
