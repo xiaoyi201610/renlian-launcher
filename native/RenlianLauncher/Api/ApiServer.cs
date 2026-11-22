@@ -1760,6 +1760,13 @@ public sealed class ApiServer
         if (string.IsNullOrWhiteSpace(target)) return new { ok = false, error = "路径为空" };
         try
         {
+            // 网址（更新下载页等）交给默认浏览器打开
+            if (target.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                target.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+                return new { ok = true };
+            }
             if (Directory.Exists(target) || File.Exists(target))
             {
                 Process.Start(new ProcessStartInfo("explorer.exe", $"\"{target}\"") { UseShellExecute = true });

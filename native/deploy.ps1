@@ -63,7 +63,7 @@ Write-Host ('启动：' + (Join-Path $target '人联启动器.exe'))
 # 6. 重新打包发布压缩包（只含 人联启动器.exe + runtime\，不含 RenlianData 测试数据）
 $dist = Join-Path $PSScriptRoot 'dist'
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
-$zip = Join-Path $dist '人联启动器_v1.7.1_原生版.zip'
+$zip = Join-Path $dist '人联启动器_v1.7.2_原生版.zip'
 $stage = Join-Path $env:TEMP ('renlian_pack_' + [guid]::NewGuid().ToString('N'))
 Remove-Item $zip -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $stage | Out-Null

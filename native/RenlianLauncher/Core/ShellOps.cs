@@ -478,8 +478,8 @@ public static class ShellOps
 
     // ------------------------------------------------------------ 版本自检
 
-    /// <summary>版本号占位：csproj 未设置 Version 时程序集版本恒为 1.0.0.0，这里兜底报 1.7.1。</summary>
-    public const string FallbackVersion = "1.7.1";
+    /// <summary>版本号占位：csproj 未设置 Version 时程序集版本恒为 1.0.0.0，这里兜底报 1.7.2。</summary>
+    public const string FallbackVersion = "1.7.2";
 
     public static string CurrentVersion
     {

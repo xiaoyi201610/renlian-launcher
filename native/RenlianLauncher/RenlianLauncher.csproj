@@ -10,9 +10,9 @@
     <RootNamespace>RenlianLauncher</RootNamespace>
     <ApplicationIcon>wwwroot\icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.7.2.7</Version>
-    <FileVersion>1.7.2.7</FileVersion>
-    <AssemblyVersion>1.7.2.7</AssemblyVersion>
+    <Version>1.7.2</Version>
+    <FileVersion>1.7.2</FileVersion>
+    <AssemblyVersion>1.7.2</AssemblyVersion>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <InvariantGlobalization>false</InvariantGlobalization>
     <DebugType>none</DebugType>

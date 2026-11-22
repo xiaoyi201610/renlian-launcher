@@ -24,7 +24,7 @@ const S = {
 };
 
 /* ---------------- 常量 ---------------- */
-const LAUNCHER_VERSION = '1.7.2.5'; // 原生 .NET 版（1.7.2 正式版前的递进版本，与 csproj 保持一致）
+const LAUNCHER_VERSION = '1.7.2'; // 原生 .NET 版（与 csproj 保持一致）
 
 /* ---------------- 工具 ---------------- */
 async function api(path, opts) {
@@ -269,6 +269,52 @@ function pathIssueDialog(issues) {
   });
 }
 
+/* ---------------- 启动自动检查更新 ----------------
+   静默检查：没有新版本就不打扰；检测到更新才弹窗，展示更新内容与下载入口。 */
+async function autoCheckUpdate() {
+  const c = (S.state && S.state.config) || {};
+  const url = (c.updateUrl && /^https?:\/\//i.test(c.updateUrl))
+    ? c.updateUrl
+    : 'https://gitee.com/xiaoyi2233/renlian-launcher/raw/master/version.json';
+  let r;
+  try { r = await post('/api/check-update', { url, current: LAUNCHER_VERSION }); }
+  catch (e) { return; }   // 断网、超时等情况直接跳过，不影响启动
+  if (!r || !r.ok || !r.updateAvailable) return;
+  updateDialog(r);
+}
+
+function updateDialog(r) {
+  return new Promise(resolve => {
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask';
+    const notes = String(r.notes || '').trim();
+    mask.innerHTML = `
+      <div class="modal">
+        <div class="modal-head">发现新版本 v${esc(r.latest)}</div>
+        <div class="modal-body">
+          <div class="modal-msg">当前版本 v${esc(r.current || LAUNCHER_VERSION)}${r.date ? ` · 发布于 ${esc(r.date)}` : ''}</div>
+          ${notes ? `<div style="white-space:pre-wrap;max-height:42vh;overflow:auto;line-height:1.7;margin-top:10px">${esc(notes)}</div>` : ''}
+        </div>
+        <div class="modal-foot">
+          <button class="btn ghost" data-m="later">稍后再说</button>
+          <button class="btn primary" data-m="download"${r.url ? '' : ' disabled'}>前往下载</button>
+        </div>
+      </div>`;
+    document.body.appendChild(mask);
+    requestAnimationFrame(() => mask.classList.add('show'));
+    const close = () => {
+      mask.classList.remove('show');
+      setTimeout(() => { mask.remove(); resolve(); }, 130);
+    };
+    mask.querySelector('[data-m="later"]').onclick = close;
+    mask.querySelector('[data-m="download"]').onclick = () => {
+      if (r.url) post('/api/open', { path: r.url }).catch(() => {});
+      close();
+    };
+    mask.addEventListener('mousedown', e => { if (e.target === mask) close(); });
+  });
+}
+
 function saveState(text, persist) {
   const el = $('#saveState');
   el.textContent = text;
@@ -320,6 +366,9 @@ async function boot() {
   saveState(T('home.loaded', { n: S.mods.length }));
   // 这些页面的内容依赖模组索引，加载完要重绘一次
   if (['mods', 'home', 'workshop'].includes(S.route)) render();
+
+  // 启动后静默检查更新：有更新才弹窗，没有就不提示
+  setTimeout(autoCheckUpdate, 2500);
 }
 
 /* ---------------- 顶栏「关联 Steam」按钮 ----------------
