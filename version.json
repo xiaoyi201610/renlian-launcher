@@ -1,6 +1,6 @@
 {
   "version": "1.7.2",
-  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.7.2/%E4%BA%BA%E8%81%94%E5%90%AF%E5%8A%A8%E5%99%A8_v1.7.2_%E5%8E%9F%E7%94%9F%E7%89%88.zip",
+  "url": "https://gitee.com/xiaoyi2233/renlian-launcher/releases/download/v1.7.2/RenlianLauncher_v1.7.2_native.zip",
   "notes": "1.7.2 原生版更新：新增创意工坊界面（已订阅一览、跳转工坊、关键词搜索）；新增上传本地 Mod 到创意工坊，预览图自动读取 thumbnail.png，读不到可点「选择图片…」手动指定；左侧栏支持拖拽排序并记忆顺序，启动页固定为排序后的第一项，侧栏底部新增拖动提示；启动时自动检测版本更新，有新版本弹窗展示更新内容与下载入口，无更新不打扰。",
   "date": "2026-11-22",
   "size": "80.1MB"
