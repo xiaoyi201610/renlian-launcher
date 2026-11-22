@@ -5879,6 +5879,14 @@ async function renderSettings() {
   try { bk = await api('/api/backups'); } catch (e) {}
 
   const st = S.state;
+  // 关于页展示的是当前用户自己的真实路径：写入目标取用户数据目录，备份目录取程序目录下的 RenlianData\backups
+  const uDir = c.userDir || '';
+  const bkFull = bk.dir || st.backupDir || '';
+  const bkShow = /\\RenlianData\\backups$/i.test(bkFull)
+    ? T('settings.programDir') + '\\RenlianData\\backups'
+    : bkFull;
+  const dbShow = uDir ? uDir + '\\launcher-v2.sqlite' : 'launcher-v2.sqlite';
+  const loadShow = uDir ? uDir + '\\dlc_load.json' : 'dlc_load.json';
   const bakList = bk.items || [];
   const bakRows = bakList.length
     ? bakList.slice(0, 8).map(b => `
@@ -6063,10 +6071,11 @@ async function renderSettings() {
     <div class="card">
       <div class="card-title">◈ ${esc(T('settings.about'))}</div>
       <div class="hint" style="margin-top:8px">
-        ${T('settings.aboutBody', { dir: bk.dir || st.backupDir || '' })}
+        ${T('settings.aboutBody', { ver: 'v' + LAUNCHER_VERSION, db: dbShow, load: loadShow, dir: bkShow })}
       </div>
       <div class="about-contact">
         <div class="ac-row"><span class="ac-k">${esc(T('settings.feedbackGroup'))}</span><span class="ac-v">793826682</span></div>
+        <div class="ac-row"><span class="ac-k">${esc(T('settings.group2'))}</span><span class="ac-v">1135052353</span></div>
         <div class="ac-row"><span class="ac-k">${esc(T('settings.xiaoheihe'))}</span><span class="ac-v">人联永不服输</span></div>
       </div>
       <div class="bar" style="margin-top:14px">
